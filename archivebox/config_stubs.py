@@ -1,5 +1,7 @@
-from typing import Optional, Dict, Union, Tuple, Callable, Pattern, Type, Any
+from pathlib import Path
+from typing import Optional, Dict, Union, Tuple, Callable, Pattern, Type, Any, List
 from mypy_extensions import TypedDict
+
 
 
 SimpleConfigValue = Union[str, bool, int, None, Pattern, Dict[str, Any]]
@@ -29,16 +31,20 @@ class ConfigDict(BaseConfig, total=False):
     IS_TTY: bool
     USE_COLOR: bool
     SHOW_PROGRESS: bool
+    IN_DOCKER: bool
 
-    OUTPUT_DIR: str
-    CONFIG_FILE: str
+    PACKAGE_DIR: Path
+    OUTPUT_DIR: Path
+    CONFIG_FILE: Path
     ONLY_NEW: bool
     TIMEOUT: int
     MEDIA_TIMEOUT: int
     OUTPUT_PERMISSIONS: str
-    URL_BLACKLIST: Optional[str]
+    RESTRICT_FILE_NAMES: str
+    URL_BLACKLIST: str
 
-    SECRET_KEY: str
+    SECRET_KEY: Optional[str]
+    BIND_ADDR: str
     ALLOWED_HOSTS: str
     DEBUG: bool
     PUBLIC_INDEX: bool
@@ -50,13 +56,15 @@ class ConfigDict(BaseConfig, total=False):
     SAVE_FAVICON: bool
     SAVE_WGET: bool
     SAVE_WGET_REQUISITES: bool
+    SAVE_SINGLEFILE: bool
+    SAVE_READABILITY: bool
+    SAVE_MERCURY: bool
     SAVE_PDF: bool
     SAVE_SCREENSHOT: bool
     SAVE_DOM: bool
     SAVE_WARC: bool
     SAVE_GIT: bool
     SAVE_MEDIA: bool
-    SAVE_PLAYLISTS: bool
     SAVE_ARCHIVE_DOT_ORG: bool
 
     RESOLUTION: str
@@ -65,58 +73,32 @@ class ConfigDict(BaseConfig, total=False):
     CURL_USER_AGENT: str
     WGET_USER_AGENT: str
     CHROME_USER_AGENT: str
-    COOKIES_FILE: Optional[str]
-    CHROME_USER_DATA_DIR: Optional[str]
+    COOKIES_FILE: Union[str, Path, None]
+    CHROME_USER_DATA_DIR: Union[str, Path, None]
     CHROME_HEADLESS: bool
     CHROME_SANDBOX: bool
 
     USE_CURL: bool
     USE_WGET: bool
+    USE_SINGLEFILE: bool
+    USE_READABILITY: bool
+    USE_MERCURY: bool
     USE_GIT: bool
     USE_CHROME: bool
     USE_YOUTUBEDL: bool
-
-    CURL_BINARY: Optional[str]
-    GIT_BINARY: Optional[str]
-    WGET_BINARY: Optional[str]
-    YOUTUBEDL_BINARY: Optional[str]
+    CURL_BINARY: str
+    GIT_BINARY: str
+    WGET_BINARY: str
+    SINGLEFILE_BINARY: str
+    READABILITY_BINARY: str
+    MERCURY_BINARY: str
+    YOUTUBEDL_BINARY: str
     CHROME_BINARY: Optional[str]
 
-    TERM_WIDTH: Callable[[], int]
-    USER: str
-    ANSI: Dict[str, str]
-    REPO_DIR: str
-    PYTHON_DIR: str
-    TEMPLATES_DIR: str
-    ARCHIVE_DIR: str
-    SOURCES_DIR: str
-    LOGS_DIR: str
-
-    URL_BLACKLIST_PTN: Optional[Pattern]
-    WGET_AUTO_COMPRESSION: bool
-
-    ARCHIVEBOX_BINARY: str
-    VERSION: str
-    GIT_SHA: str
-
-    PYTHON_BINARY: str
-    PYTHON_ENCODING: str
-    PYTHON_VERSION: str
-
-    DJANGO_BINARY: str
-    DJANGO_VERSION: str
-
-    CURL_VERSION: str
-    WGET_VERSION: str
-    YOUTUBEDL_VERSION: str
-    GIT_VERSION: str
-    CHROME_VERSION: str
-
-    DEPENDENCIES: Dict[str, SimpleConfigValueDict]
-    CODE_LOCATIONS: Dict[str, SimpleConfigValueDict]
-    CONFIG_LOCATIONS: Dict[str, SimpleConfigValueDict]
-    DATA_LOCATIONS: Dict[str, SimpleConfigValueDict]
-    CHROME_OPTIONS: Dict[str, SimpleConfigValue]
+    YOUTUBEDL_ARGS: List[str]
+    WGET_ARGS: List[str]
+    CURL_ARGS: List[str]
+    GIT_ARGS: List[str]
 
 
 ConfigDefaultValueGetter = Callable[[ConfigDict], ConfigValue]

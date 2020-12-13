@@ -222,3 +222,12 @@ body.model-snapshot.change-list #content .object-tools {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
 }
+
+.tags > a > .tag {
+    float: right;
+    border-radius: 5px;
+    background-color: #bfdfff;
+    padding: 2px 5px;
+    margin-left: 4px;
+    margin-top: 1px;
+}

@@ -1,6 +1,7 @@
 __package__ = 'archivebox'
 
 import re
+from pathlib import Path
 import json as pyjson
 
 
@@ -14,7 +15,8 @@ from datetime import datetime
 from dateparser import parse as dateparser
 
 import requests
-from base32_crockford import encode as base32_encode                            # type: ignore
+from requests.exceptions import RequestException, ReadTimeout
+from .base32_crockford import encode as base32_encode                            # type: ignore
 from w3lib.encoding import html_body_declared_encoding, http_content_type_encoding
 
 try:
@@ -59,7 +61,7 @@ URL_REGEX = re.compile(
     r'(?:[a-zA-Z]|[0-9]'              # followed by allowed alphanum characters
     r'|[$-_@.&+]|[!*\(\),]'           #    or allowed symbols
     r'|(?:%[0-9a-fA-F][0-9a-fA-F]))'  #    or allowed unicode bytes
-    r'[^\]\[\(\)<>\""\'\s]+',         # stop parsing at these symbols
+    r'[^\]\[\(\)<>"\'\s]+',         # stop parsing at these symbols
     re.IGNORECASE,
 )
 
@@ -172,6 +174,35 @@ def download_url(url: str, timeout: int=None) -> str:
 
     return response.text
 
+@enforce_types
+def get_headers(url: str, timeout: int=None) -> str:
+    """Download the contents of a remote url and return the headers"""
+    from .config import TIMEOUT, CHECK_SSL_VALIDITY, WGET_USER_AGENT
+    timeout = timeout or TIMEOUT
+
+    try:
+        response = requests.head(
+            url,
+            headers={'User-Agent': WGET_USER_AGENT},
+            verify=CHECK_SSL_VALIDITY,
+            timeout=timeout,
+            allow_redirects=True,
+        )
+        if response.status_code >= 400:
+            raise RequestException
+    except ReadTimeout:
+        raise
+    except RequestException:
+        response = requests.get(
+            url,
+            headers={'User-Agent': WGET_USER_AGENT},
+            verify=CHECK_SSL_VALIDITY,
+            timeout=timeout,
+            stream=True
+        )
+    
+    return pyjson.dumps(dict(response.headers), indent=4)
+
 
 @enforce_types
 def chrome_args(**options) -> List[str]:
@@ -276,7 +307,10 @@ class ExtendedEncoder(pyjson.JSONEncoder):
 
         elif isinstance(obj, Exception):
             return '{}: {}'.format(obj.__class__.__name__, obj)
-
+        
+        elif isinstance(obj, Path):
+            return str(obj)
+        
         elif cls_name in ('dict_items', 'dict_keys', 'dict_values'):
             return tuple(obj)
 

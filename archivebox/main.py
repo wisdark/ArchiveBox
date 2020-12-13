@@ -3,9 +3,13 @@ __package__ = 'archivebox'
 import os
 import sys
 import shutil
+import platform
+from pathlib import Path
+from datetime import date
 
 from typing import Dict, List, Optional, Iterable, IO, Union
 from crontab import CronTab, CronSlices
+from django.db.models import QuerySet
 
 from .cli import (
     list_subcommands,
@@ -25,10 +29,11 @@ from .util import enforce_types                         # type: ignore
 from .system import get_dir_size, dedupe_cron_jobs, CRON_COMMENT
 from .index import (
     load_main_index,
+    get_empty_snapshot_queryset,
     parse_links_from_source,
     dedupe_links,
     write_main_index,
-    link_matches_filter,
+    snapshot_filter,
     get_indexed_folders,
     get_archived_folders,
     get_unarchived_folders,
@@ -46,18 +51,18 @@ from .index.json import (
     parse_json_links_details,
 )
 from .index.sql import (
-    parse_sql_main_index,
     get_admins,
     apply_migrations,
     remove_from_sql_main_index,
 )
-from .index.html import parse_html_main_index
 from .extractors import archive_links, archive_link, ignore_methods
 from .config import (
     stderr,
+    hint,
     ConfigDict,
     ANSI,
-    # IS_TTY,
+    IS_TTY,
+    IN_DOCKER,
     USER,
     ARCHIVEBOX_BINARY,
     ONLY_NEW,
@@ -107,11 +112,14 @@ from .logging_util import (
 
 
 ALLOWED_IN_OUTPUT_DIR = {
+    'lost+found',
     '.DS_Store',
     '.venv',
     'venv',
     'virtualenv',
     '.virtualenv',
+    'node_modules',
+    'package-lock.json',
     ARCHIVE_DIR_NAME,
     SOURCES_DIR_NAME,
     LOGS_DIR_NAME,
@@ -124,7 +132,7 @@ ALLOWED_IN_OUTPUT_DIR = {
 }
 
 @enforce_types
-def help(out_dir: str=OUTPUT_DIR) -> None:
+def help(out_dir: Path=OUTPUT_DIR) -> None:
     """Print the ArchiveBox help message and usage"""
 
     all_subcommands = list_subcommands()
@@ -147,7 +155,7 @@ def help(out_dir: str=OUTPUT_DIR) -> None:
     )
 
 
-    if os.path.exists(os.path.join(out_dir, JSON_INDEX_FILENAME)):
+    if (Path(out_dir) / SQL_INDEX_FILENAME).exists():
         print('''{green}ArchiveBox v{}: The self-hosted internet archive.{reset}
 
 {lightred}Active data directory:{reset}
@@ -168,16 +176,20 @@ def help(out_dir: str=OUTPUT_DIR) -> None:
     archivebox add --depth=1 ~/Downloads/bookmarks_export.html
     
     archivebox list --sort=timestamp --csv=timestamp,url,is_archived
-    archivebox schedule --every=week https://example.com/some/feed.rss
+    archivebox schedule --every=day https://example.com/some/feed.rss
     archivebox update --resume=15109948213.123
 
 {lightred}Documentation:{reset}
-    https://github.com/pirate/ArchiveBox/wiki
+    https://github.com/ArchiveBox/ArchiveBox/wiki
 '''.format(VERSION, out_dir, COMMANDS_HELP_TEXT, **ANSI))
     
     else:
         print('{green}Welcome to ArchiveBox v{}!{reset}'.format(VERSION, **ANSI))
         print()
+        if IN_DOCKER:
+            print('When using Docker, you need to mount a volume to use as your data dir:')
+            print('    docker run -v /some/path:/data archivebox ...')
+            print()
         print('To import an existing archive (from a previous version of ArchiveBox):')
         print('    1. cd into your data dir OUTPUT_DIR (usually ArchiveBox/output) and run:')
         print('    2. archivebox init')
@@ -187,18 +199,20 @@ def help(out_dir: str=OUTPUT_DIR) -> None:
         print('    2. archivebox init')
         print()
         print('For more information, see the documentation here:')
-        print('    https://github.com/pirate/ArchiveBox/wiki')
+        print('    https://github.com/ArchiveBox/ArchiveBox/wiki')
 
 
 @enforce_types
 def version(quiet: bool=False,
-            out_dir: str=OUTPUT_DIR) -> None:
+            out_dir: Path=OUTPUT_DIR) -> None:
     """Print the ArchiveBox version and dependency information"""
 
     if quiet:
         print(VERSION)
     else:
         print('ArchiveBox v{}'.format(VERSION))
+        p = platform.uname()
+        print(p.system, platform.platform(), p.machine)
         print()
 
         print('{white}[i] Dependency versions:{reset}'.format(**ANSI))
@@ -206,19 +220,23 @@ def version(quiet: bool=False,
             print(printable_dependency_version(name, dependency))
         
         print()
-        print('{white}[i] Code locations:{reset}'.format(**ANSI))
+        print('{white}[i] Source-code locations:{reset}'.format(**ANSI))
         for name, folder in CODE_LOCATIONS.items():
             print(printable_folder_status(name, folder))
 
         print()
-        print('{white}[i] External locations:{reset}'.format(**ANSI))
+        print('{white}[i] Secrets locations:{reset}'.format(**ANSI))
         for name, folder in EXTERNAL_LOCATIONS.items():
             print(printable_folder_status(name, folder))
 
         print()
-        print('{white}[i] Data locations:{reset}'.format(**ANSI))
-        for name, folder in DATA_LOCATIONS.items():
-            print(printable_folder_status(name, folder))
+        if DATA_LOCATIONS['OUTPUT_DIR']['is_valid']:
+            print('{white}[i] Data locations:{reset}'.format(**ANSI))
+            for name, folder in DATA_LOCATIONS.items():
+                print(printable_folder_status(name, folder))
+        else:
+            print()
+            print('{white}[i] Data locations:{reset}'.format(**ANSI))
 
         print()
         check_dependencies()
@@ -228,7 +246,7 @@ def version(quiet: bool=False,
 def run(subcommand: str,
         subcommand_args: Optional[List[str]],
         stdin: Optional[IO]=None,
-        out_dir: str=OUTPUT_DIR) -> None:
+        out_dir: Path=OUTPUT_DIR) -> None:
     """Run a given ArchiveBox subcommand with the given list of args"""
     run_subcommand(
         subcommand=subcommand,
@@ -239,11 +257,16 @@ def run(subcommand: str,
 
 
 @enforce_types
-def init(force: bool=False, out_dir: str=OUTPUT_DIR) -> None:
+def init(force: bool=False, out_dir: Path=OUTPUT_DIR) -> None:
     """Initialize a new ArchiveBox collection in the current directory"""
-    os.makedirs(out_dir, exist_ok=True)
+    Path(out_dir).mkdir(exist_ok=True)
     is_empty = not len(set(os.listdir(out_dir)) - ALLOWED_IN_OUTPUT_DIR)
-    existing_index = os.path.exists(os.path.join(out_dir, JSON_INDEX_FILENAME))
+
+    if (Path(out_dir) / JSON_INDEX_FILENAME).exists():
+        stderr("[!] This folder contains a JSON index. It is deprecated, and will no longer be kept up to date automatically.", color="lightyellow")
+        stderr("    You can run `archivebox list --json --with-headers > index.json` to manually generate it.", color="lightyellow")
+
+    existing_index = (Path(out_dir) / SQL_INDEX_FILENAME).exists()
 
     if is_empty and not existing_index:
         print('{green}[+] Initializing a new ArchiveBox collection in this folder...{reset}'.format(**ANSI))
@@ -255,11 +278,11 @@ def init(force: bool=False, out_dir: str=OUTPUT_DIR) -> None:
         print('{green}------------------------------------------------------------------{reset}'.format(**ANSI))
     else:
         if force:
-            stderr('[!] This folder appears to already have files in it, but no index.json is present.', color='lightyellow')
+            stderr('[!] This folder appears to already have files in it, but no index.sqlite3 is present.', color='lightyellow')
             stderr('    Because --force was passed, ArchiveBox will initialize anyway (which may overwrite existing files).')
         else:
             stderr(
-                ("{red}[X] This folder appears to already have files in it, but no index.json is present.{reset}\n\n"
+                ("{red}[X] This folder appears to already have files in it, but no index.sqlite3 present.{reset}\n\n"
                 "    You must run init in a completely empty directory, or an existing data folder.\n\n"
                 "    {lightred}Hint:{reset} To import an existing data folder make sure to cd into the folder first, \n"
                 "    then run and run 'archivebox init' to pick up where you left off.\n\n"
@@ -273,32 +296,31 @@ def init(force: bool=False, out_dir: str=OUTPUT_DIR) -> None:
     else:
         print('\n{green}[+] Building archive folder structure...{reset}'.format(**ANSI))
     
-    os.makedirs(SOURCES_DIR, exist_ok=True)
+    Path(SOURCES_DIR).mkdir(exist_ok=True)
     print(f'    √ {SOURCES_DIR}')
     
-    os.makedirs(ARCHIVE_DIR, exist_ok=True)
+    Path(ARCHIVE_DIR).mkdir(exist_ok=True)
     print(f'    √ {ARCHIVE_DIR}')
 
-    os.makedirs(LOGS_DIR, exist_ok=True)
+    Path(LOGS_DIR).mkdir(exist_ok=True)
     print(f'    √ {LOGS_DIR}')
 
     write_config_file({}, out_dir=out_dir)
     print(f'    √ {CONFIG_FILE}')
-    
-    if os.path.exists(os.path.join(out_dir, SQL_INDEX_FILENAME)):
+    if (Path(out_dir) / SQL_INDEX_FILENAME).exists():
         print('\n{green}[*] Verifying main SQL index and running migrations...{reset}'.format(**ANSI))
     else:
         print('\n{green}[+] Building main SQL index and running migrations...{reset}'.format(**ANSI))
     
     setup_django(out_dir, check_db=False)
-    DATABASE_FILE = os.path.join(out_dir, SQL_INDEX_FILENAME)
+    DATABASE_FILE = Path(out_dir) / SQL_INDEX_FILENAME
     print(f'    √ {DATABASE_FILE}')
     print()
     for migration_line in apply_migrations(out_dir):
         print(f'    {migration_line}')
 
 
-    assert os.path.exists(DATABASE_FILE)
+    assert DATABASE_FILE.exists()
     
     # from django.contrib.auth.models import User
     # if IS_TTY and not User.objects.filter(is_superuser=True).exists():
@@ -308,13 +330,12 @@ def init(force: bool=False, out_dir: str=OUTPUT_DIR) -> None:
     print()
     print('{green}[*] Collecting links from any existing indexes and archive folders...{reset}'.format(**ANSI))
 
-    all_links: Dict[str, Link] = {}
+    all_links = get_empty_snapshot_queryset()
+    pending_links: Dict[str, Link] = {}
+
     if existing_index:
-        all_links = {
-            link.url: link
-            for link in load_main_index(out_dir=out_dir, warn=False)
-        }
-        print('    √ Loaded {} links from existing main index.'.format(len(all_links)))
+        all_links = load_main_index(out_dir=out_dir, warn=False)
+        print('    √ Loaded {} links from existing main index.'.format(all_links.count()))
 
     # Links in data folders that dont match their timestamp
     fixed, cant_fix = fix_invalid_folder_locations(out_dir=out_dir)
@@ -327,36 +348,26 @@ def init(force: bool=False, out_dir: str=OUTPUT_DIR) -> None:
     orphaned_json_links = {
         link.url: link
         for link in parse_json_main_index(out_dir)
-        if link.url not in all_links
+        if not all_links.filter(url=link.url).exists()
     }
     if orphaned_json_links:
-        all_links.update(orphaned_json_links)
+        pending_links.update(orphaned_json_links)
         print('    {lightyellow}√ Added {} orphaned links from existing JSON index...{reset}'.format(len(orphaned_json_links), **ANSI))
-
-    # Links in SQL index but not in main index
-    orphaned_sql_links = {
-        link.url: link
-        for link in parse_sql_main_index(out_dir)
-        if link.url not in all_links
-    }
-    if orphaned_sql_links:
-        all_links.update(orphaned_sql_links)
-        print('    {lightyellow}√ Added {} orphaned links from existing SQL index...{reset}'.format(len(orphaned_sql_links), **ANSI))
 
     # Links in data dir indexes but not in main index
     orphaned_data_dir_links = {
         link.url: link
         for link in parse_json_links_details(out_dir)
-        if link.url not in all_links
+        if not all_links.filter(url=link.url).exists()
     }
     if orphaned_data_dir_links:
-        all_links.update(orphaned_data_dir_links)
+        pending_links.update(orphaned_data_dir_links)
         print('    {lightyellow}√ Added {} orphaned links from existing archive directories.{reset}'.format(len(orphaned_data_dir_links), **ANSI))
 
     # Links in invalid/duplicate data dirs
     invalid_folders = {
         folder: link
-        for folder, link in get_invalid_folders(all_links.values(), out_dir=out_dir).items()
+        for folder, link in get_invalid_folders(all_links, out_dir=out_dir).items()
     }
     if invalid_folders:
         print('    {lightyellow}! Skipped adding {} invalid link data directories.{reset}'.format(len(invalid_folders), **ANSI))
@@ -367,7 +378,7 @@ def init(force: bool=False, out_dir: str=OUTPUT_DIR) -> None:
         print('        archivebox list --status=invalid')
 
 
-    write_main_index(list(all_links.values()), out_dir=out_dir)
+    write_main_index(list(pending_links.values()), out_dir=out_dir, finished=True)
 
     print('\n{green}------------------------------------------------------------------{reset}'.format(**ANSI))
     if existing_index:
@@ -384,9 +395,18 @@ def init(force: bool=False, out_dir: str=OUTPUT_DIR) -> None:
     print('    For more usage and examples, run:')
     print('        archivebox help')
 
+    json_index = Path(out_dir) / JSON_INDEX_FILENAME
+    html_index = Path(out_dir) / HTML_INDEX_FILENAME
+    index_name = f"{date.today()}_index_old"
+    if json_index.exists():
+        json_index.rename(f"{index_name}.json")
+    if html_index.exists():
+        html_index.rename(f"{index_name}.html")
+
+
 
 @enforce_types
-def status(out_dir: str=OUTPUT_DIR) -> None:
+def status(out_dir: Path=OUTPUT_DIR) -> None:
     """Print out some info and statistics about the archive collection"""
 
     check_data_folder(out_dir=out_dir)
@@ -402,21 +422,11 @@ def status(out_dir: str=OUTPUT_DIR) -> None:
     print(f'    Index size: {size} across {num_files} files')
     print()
 
-    links = list(load_main_index(out_dir=out_dir))
-    num_json_links = len(links)
-    num_sql_links = sum(1 for link in parse_sql_main_index(out_dir=out_dir))
-    num_html_links = sum(1 for url in parse_html_main_index(out_dir=out_dir))
+    links = load_main_index(out_dir=out_dir)
+    num_sql_links = links.count()
     num_link_details = sum(1 for link in parse_json_links_details(out_dir=out_dir))
-    print(f'    > JSON Main Index: {num_json_links} links'.ljust(36),  f'(found in {JSON_INDEX_FILENAME})')
     print(f'    > SQL Main Index: {num_sql_links} links'.ljust(36), f'(found in {SQL_INDEX_FILENAME})')
-    print(f'    > HTML Main Index: {num_html_links} links'.ljust(36), f'(found in {HTML_INDEX_FILENAME})')
     print(f'    > JSON Link Details: {num_link_details} links'.ljust(36), f'(found in {ARCHIVE_DIR_NAME}/*/index.json)')
-
-    if num_html_links != len(links) or num_sql_links != len(links):
-        print()
-        print('    {lightred}Hint:{reset} You can fix index count differences automatically by running:'.format(**ANSI))
-        print('        archivebox init')
-    
     print()
     print('{green}[*] Scanning archive data directories...{reset}'.format(**ANSI))
     print(ANSI['lightyellow'], f'   {ARCHIVE_DIR}/*', ANSI['reset'])
@@ -471,7 +481,8 @@ def status(out_dir: str=OUTPUT_DIR) -> None:
     if last_login:
         print(f'    Last UI login: {last_login.username} @ {str(last_login.last_login)[:16]}')
     last_updated = Snapshot.objects.order_by('updated').last()
-    print(f'    Last changes: {str(last_updated.updated)[:16]}')
+    if last_updated:
+        print(f'    Last changes: {str(last_updated.updated)[:16]}')
 
     if not users:
         print()
@@ -479,7 +490,7 @@ def status(out_dir: str=OUTPUT_DIR) -> None:
         print('        archivebox manage createsuperuser')
 
     print()
-    for snapshot in Snapshot.objects.order_by('-updated')[:10]:
+    for snapshot in links.order_by('-updated')[:10]:
         if not snapshot.updated:
             continue
         print(
@@ -495,7 +506,7 @@ def status(out_dir: str=OUTPUT_DIR) -> None:
 
 
 @enforce_types
-def oneshot(url: str, out_dir: str=OUTPUT_DIR):
+def oneshot(url: str, out_dir: Path=OUTPUT_DIR):
     """
     Create a single URL archive folder with an index.json and index.html, and all the archive method outputs.
     You can run this to archive single pages without needing to create a whole collection with archivebox init.
@@ -516,15 +527,22 @@ def add(urls: Union[str, List[str]],
         depth: int=0,
         update_all: bool=not ONLY_NEW,
         index_only: bool=False,
-        out_dir: str=OUTPUT_DIR) -> List[Link]:
+        overwrite: bool=False,
+        init: bool=False,
+        out_dir: Path=OUTPUT_DIR,
+        extractors: str="") -> List[Link]:
     """Add a new URL or list of URLs to your archive"""
 
     assert depth in (0, 1), 'Depth must be 0 or 1 (depth >1 is not supported yet)'
 
+    extractors = extractors.split(",") if extractors else []
+
+    if init:
+        run_subcommand('init', stdin=None, pwd=out_dir)
+
     # Load list of links from the existing index
     check_data_folder(out_dir=out_dir)
     check_dependencies()
-    all_links: List[Link] = []
     new_links: List[Link] = []
     all_links = load_main_index(out_dir=out_dir)
 
@@ -536,46 +554,55 @@ def add(urls: Union[str, List[str]],
         # save verbatim args to sources
         write_ahead_log = save_text_as_source('\n'.join(urls), filename='{ts}-import.txt', out_dir=out_dir)
     
-    new_links += parse_links_from_source(write_ahead_log)
+    new_links += parse_links_from_source(write_ahead_log, root_url=None)
 
     # If we're going one level deeper, download each link and look for more links
     new_links_depth = []
     if new_links and depth == 1:
         log_crawl_started(new_links)
         for new_link in new_links:
-            downloaded_file = save_file_as_source(new_link.url, filename='{ts}-crawl-{basename}.txt', out_dir=out_dir)
-            new_links_depth += parse_links_from_source(downloaded_file)
-    all_links, new_links = dedupe_links(all_links, new_links + new_links_depth)
-    write_main_index(links=all_links, out_dir=out_dir, finished=not new_links)
+            downloaded_file = save_file_as_source(new_link.url, filename=f'{new_link.timestamp}-crawl-{new_link.domain}.txt', out_dir=out_dir)
+            new_links_depth += parse_links_from_source(downloaded_file, root_url=new_link.url)
+
+    imported_links = list({link.url: link for link in (new_links + new_links_depth)}.values())
+    new_links = dedupe_links(all_links, imported_links)
+
+    write_main_index(links=new_links, out_dir=out_dir, finished=not new_links)
+    all_links = load_main_index(out_dir=out_dir)
 
     if index_only:
         return all_links
 
     # Run the archive methods for each link
-    to_archive = all_links if update_all else new_links
-    archive_links(to_archive, out_dir=out_dir)
-
-    # Step 4: Re-write links index with updated titles, icons, and resources
-    if to_archive:
-        all_links = load_main_index(out_dir=out_dir)
-        write_main_index(links=list(all_links), out_dir=out_dir, finished=True)
+    archive_kwargs = {
+        "out_dir": out_dir,
+    }
+    if extractors:
+        archive_kwargs["methods"] = extractors
+    if update_all:
+        archive_links(all_links, overwrite=overwrite, **archive_kwargs)
+    elif overwrite:
+        archive_links(imported_links, overwrite=True, **archive_kwargs)
+    elif new_links:
+        archive_links(new_links, overwrite=False, **archive_kwargs)
+    
     return all_links
 
 @enforce_types
 def remove(filter_str: Optional[str]=None,
            filter_patterns: Optional[List[str]]=None,
            filter_type: str='exact',
-           links: Optional[List[Link]]=None,
+           snapshots: Optional[QuerySet]=None,
            after: Optional[float]=None,
            before: Optional[float]=None,
            yes: bool=False,
            delete: bool=False,
-           out_dir: str=OUTPUT_DIR) -> List[Link]:
+           out_dir: Path=OUTPUT_DIR) -> List[Link]:
     """Remove the specified URLs from the archive"""
     
     check_data_folder(out_dir=out_dir)
 
-    if links is None:
+    if snapshots is None:
         if filter_str and filter_patterns:
             stderr(
                 '[X] You should pass either a pattern as an argument, '
@@ -590,61 +617,54 @@ def remove(filter_str: Optional[str]=None,
                 color='red',
             )
             stderr()
-            stderr('    {lightred}Hint:{reset} To remove all urls you can run:'.format(**ANSI))
-            stderr("        archivebox remove --filter-type=regex '.*'")
+            hint(('To remove all urls you can run:',
+                'archivebox remove --filter-type=regex ".*"'))
             stderr()
             raise SystemExit(2)
         elif filter_str:
             filter_patterns = [ptn.strip() for ptn in filter_str.split('\n')]
 
-        log_list_started(filter_patterns, filter_type)
-        timer = TimedProgress(360, prefix='      ')
-        try:
-            links = list(list_links(
-                filter_patterns=filter_patterns,
-                filter_type=filter_type,
-                after=after,
-                before=before,
-            ))
-        finally:
-            timer.end()
+    list_kwargs = {
+        "filter_patterns": filter_patterns,
+        "filter_type": filter_type,
+        "after": after,
+        "before": before,
+    }
+    if snapshots:
+        list_kwargs["snapshots"] = snapshots
+
+    log_list_started(filter_patterns, filter_type)
+    timer = TimedProgress(360, prefix='      ')
+    try:
+        snapshots = list_links(**list_kwargs)
+    finally:
+        timer.end()
 
 
-    if not len(links):
+    if not snapshots.exists():
         log_removal_finished(0, 0)
         raise SystemExit(1)
 
 
-    log_list_finished(links)
-    log_removal_started(links, yes=yes, delete=delete)
+    log_links = [link.as_link() for link in snapshots]
+    log_list_finished(log_links)
+    log_removal_started(log_links, yes=yes, delete=delete)
 
     timer = TimedProgress(360, prefix='      ')
     try:
-        to_keep = []
-        to_delete = []
-        all_links = load_main_index(out_dir=out_dir)
-        for link in all_links:
-            should_remove = (
-                (after is not None and float(link.timestamp) < after)
-                or (before is not None and float(link.timestamp) > before)
-                or link_matches_filter(link, filter_patterns or [], filter_type)
-                or link in links
-            )
-            if should_remove:
-                to_delete.append(link)
-
-                if delete:
-                    shutil.rmtree(link.link_dir, ignore_errors=True)
-            else:
-                to_keep.append(link)
+        for snapshot in snapshots:
+            if delete:
+                shutil.rmtree(snapshot.as_link().link_dir, ignore_errors=True)
     finally:
         timer.end()
 
-    remove_from_sql_main_index(links=to_delete, out_dir=out_dir)
-    write_main_index(links=to_keep, out_dir=out_dir, finished=True)
-    log_removal_finished(len(all_links), len(to_keep))
+    to_remove = snapshots.count()
+
+    remove_from_sql_main_index(snapshots=snapshots, out_dir=out_dir)
+    all_snapshots = load_main_index(out_dir=out_dir)
+    log_removal_finished(all_snapshots.count(), to_remove)
     
-    return to_keep
+    return all_snapshots
 
 @enforce_types
 def update(resume: Optional[float]=None,
@@ -657,30 +677,23 @@ def update(resume: Optional[float]=None,
            status: Optional[str]=None,
            after: Optional[str]=None,
            before: Optional[str]=None,
-           out_dir: str=OUTPUT_DIR) -> List[Link]:
+           out_dir: Path=OUTPUT_DIR) -> List[Link]:
     """Import any new links from subscriptions and retry any previously failed/skipped links"""
 
     check_data_folder(out_dir=out_dir)
     check_dependencies()
+    new_links: List[Link] = [] # TODO: Remove input argument: only_new
 
-    # Step 1: Load list of links from the existing index
-    #         merge in and dedupe new links from import_path
-    all_links: List[Link] = []
-    new_links: List[Link] = []
-    all_links = load_main_index(out_dir=out_dir)
-
-    # Step 2: Write updated index with deduped old and new links back to disk
-    write_main_index(links=list(all_links), out_dir=out_dir)
-
-    # Step 3: Filter for selected_links
-    matching_links = list_links(
+    # Step 1: Filter for selected_links
+    matching_snapshots = list_links(
         filter_patterns=filter_patterns,
         filter_type=filter_type,
         before=before,
         after=after,
     )
+
     matching_folders = list_folders(
-        links=list(matching_links),
+        links=matching_snapshots,
         status=status,
         out_dir=out_dir,
     )
@@ -689,13 +702,22 @@ def update(resume: Optional[float]=None,
     if index_only:
         return all_links
         
-    # Step 3: Run the archive methods for each link
+    # Step 2: Run the archive methods for each link
     to_archive = new_links if only_new else all_links
+    if resume:
+        to_archive = [
+            link for link in to_archive
+            if link.timestamp >= str(resume)
+        ]
+        if not to_archive:
+            stderr('')
+            stderr(f'[√] Nothing found to resume after {resume}', color='green')
+            return all_links
+
     archive_links(to_archive, overwrite=overwrite, out_dir=out_dir)
 
     # Step 4: Re-write links index with updated titles, icons, and resources
     all_links = load_main_index(out_dir=out_dir)
-    write_main_index(links=list(all_links), out_dir=out_dir, finished=True)
     return all_links
 
 @enforce_types
@@ -708,7 +730,9 @@ def list_all(filter_patterns_str: Optional[str]=None,
              sort: Optional[str]=None,
              csv: Optional[str]=None,
              json: bool=False,
-             out_dir: str=OUTPUT_DIR) -> Iterable[Link]:
+             html: bool=False,
+             with_headers: bool=False,
+             out_dir: Path=OUTPUT_DIR) -> Iterable[Link]:
     """List, filter, and export information about archive entries"""
     
     check_data_folder(out_dir=out_dir)
@@ -724,7 +748,7 @@ def list_all(filter_patterns_str: Optional[str]=None,
         filter_patterns = filter_patterns_str.split('\n')
 
 
-    links = list_links(
+    snapshots = list_links(
         filter_patterns=filter_patterns,
         filter_type=filter_type,
         before=before,
@@ -732,72 +756,65 @@ def list_all(filter_patterns_str: Optional[str]=None,
     )
 
     if sort:
-        links = sorted(links, key=lambda link: getattr(link, sort))
+        snapshots = snapshots.order_by(sort)
 
     folders = list_folders(
-        links=list(links),
+        links=snapshots,
         status=status,
         out_dir=out_dir,
     )
     
-    print(printable_folders(folders, json=json, csv=csv))
+    print(printable_folders(folders, json=json, csv=csv, html=html, with_headers=with_headers))
     return folders
 
 
 @enforce_types
-def list_links(filter_patterns: Optional[List[str]]=None,
+def list_links(snapshots: Optional[QuerySet]=None,
+               filter_patterns: Optional[List[str]]=None,
                filter_type: str='exact',
                after: Optional[float]=None,
                before: Optional[float]=None,
-               out_dir: str=OUTPUT_DIR) -> Iterable[Link]:
+               out_dir: Path=OUTPUT_DIR) -> Iterable[Link]:
     
     check_data_folder(out_dir=out_dir)
 
-    all_links = load_main_index(out_dir=out_dir)
+    if snapshots:
+        all_snapshots = snapshots
+    else:
+        all_snapshots = load_main_index(out_dir=out_dir)
 
-    for link in all_links:
-        if after is not None and float(link.timestamp) < after:
-            continue
-        if before is not None and float(link.timestamp) > before:
-            continue
-        
-        if filter_patterns:
-            if link_matches_filter(link, filter_patterns, filter_type):
-                yield link
-        else:
-            yield link
+    if after is not None:
+        all_snapshots = all_snapshots.filter(timestamp__lt=after)
+    if before is not None:
+        all_snapshots = all_snapshots.filter(timestamp__gt=before)
+    if filter_patterns:
+        all_snapshots = snapshot_filter(all_snapshots, filter_patterns, filter_type)
+    return all_snapshots
 
 @enforce_types
 def list_folders(links: List[Link],
                  status: str,
-                 out_dir: str=OUTPUT_DIR) -> Dict[str, Optional[Link]]:
+                 out_dir: Path=OUTPUT_DIR) -> Dict[str, Optional[Link]]:
     
     check_data_folder(out_dir=out_dir)
 
-    if status == 'indexed':
-        return get_indexed_folders(links, out_dir=out_dir)
-    elif status == 'archived':
-        return get_archived_folders(links, out_dir=out_dir)
-    elif status == 'unarchived':
-        return get_unarchived_folders(links, out_dir=out_dir)
+    STATUS_FUNCTIONS = {
+        "indexed": get_indexed_folders,
+        "archived": get_archived_folders,
+        "unarchived": get_unarchived_folders,
+        "present": get_present_folders,
+        "valid": get_valid_folders,
+        "invalid": get_invalid_folders,
+        "duplicate": get_duplicate_folders,
+        "orphaned": get_orphaned_folders,
+        "corrupted": get_corrupted_folders,
+        "unrecognized": get_unrecognized_folders,
+    }
 
-    elif status == 'present':
-        return get_present_folders(links, out_dir=out_dir)
-    elif status == 'valid':
-        return get_valid_folders(links, out_dir=out_dir)
-    elif status == 'invalid':
-        return get_invalid_folders(links, out_dir=out_dir)
-
-    elif status == 'duplicate':
-        return get_duplicate_folders(links, out_dir=out_dir)
-    elif status == 'orphaned':
-        return get_orphaned_folders(links, out_dir=out_dir)
-    elif status == 'corrupted':
-        return get_corrupted_folders(links, out_dir=out_dir)
-    elif status == 'unrecognized':
-        return get_unrecognized_folders(links, out_dir=out_dir)
-
-    raise ValueError('Status not recognized.')
+    try:
+        return STATUS_FUNCTIONS[status](links, out_dir=out_dir)
+    except KeyError:
+        raise ValueError('Status not recognized.')
 
 
 @enforce_types
@@ -806,7 +823,7 @@ def config(config_options_str: Optional[str]=None,
            get: bool=False,
            set: bool=False,
            reset: bool=False,
-           out_dir: str=OUTPUT_DIR) -> None:
+           out_dir: Path=OUTPUT_DIR) -> None:
     """Get and set your ArchiveBox project configuration values"""
 
     check_data_folder(out_dir=out_dir)
@@ -852,7 +869,7 @@ def config(config_options_str: Optional[str]=None,
                 stderr(f'    {line}')
                 raise SystemExit(2)
 
-            raw_key, val = line.split('=')
+            raw_key, val = line.split('=', 1)
             raw_key = raw_key.upper().strip()
             key = get_real_name(raw_key)
             if key != raw_key:
@@ -904,79 +921,49 @@ def schedule(add: bool=False,
              run_all: bool=False,
              quiet: bool=False,
              every: Optional[str]=None,
+             depth: int=0,
              import_path: Optional[str]=None,
-             out_dir: str=OUTPUT_DIR):
+             out_dir: Path=OUTPUT_DIR):
     """Set ArchiveBox to regularly import URLs at specific times using cron"""
     
     check_data_folder(out_dir=out_dir)
 
-    os.makedirs(os.path.join(out_dir, LOGS_DIR_NAME), exist_ok=True)
+    (Path(out_dir) / LOGS_DIR_NAME).mkdir(exist_ok=True)
 
     cron = CronTab(user=True)
     cron = dedupe_cron_jobs(cron)
 
-    existing_jobs = list(cron.find_comment(CRON_COMMENT))
-    if foreground or run_all:
-        if import_path or (not existing_jobs):
-            stderr('{red}[X] You must schedule some jobs first before running in foreground mode.{reset}'.format(**ANSI))
-            stderr('    archivebox schedule --every=hour https://example.com/some/rss/feed.xml')
-            raise SystemExit(1)
-        print('{green}[*] Running {} ArchiveBox jobs in foreground task scheduler...{reset}'.format(len(existing_jobs), **ANSI))
-        if run_all:
-            try:
-                for job in existing_jobs:
-                    sys.stdout.write(f'  > {job.command}')
-                    sys.stdout.flush()
-                    job.run()
-                    sys.stdout.write(f'\r  √ {job.command}\n')
-            except KeyboardInterrupt:
-                print('\n{green}[√] Stopped.{reset}'.format(**ANSI))
-                raise SystemExit(1)
-        if foreground:
-            try:
-                for result in cron.run_scheduler():
-                    print(result)
-            except KeyboardInterrupt:
-                print('\n{green}[√] Stopped.{reset}'.format(**ANSI))
-                raise SystemExit(1)
-
-    elif show:
-        if existing_jobs:
-            print('\n'.join(str(cmd) for cmd in existing_jobs))
-        else:
-            stderr('{red}[X] There are no ArchiveBox cron jobs scheduled for your user ({}).{reset}'.format(USER, **ANSI))
-            stderr('    To schedule a new job, run:')
-            stderr('        archivebox schedule --every=[timeperiod] https://example.com/some/rss/feed.xml')
-        raise SystemExit(0)
-
-    elif clear:
+    if clear:
         print(cron.remove_all(comment=CRON_COMMENT))
         cron.write()
         raise SystemExit(0)
 
-    elif every:
-        quoted = lambda s: f'"{s}"' if s and ' ' in s else s
+    existing_jobs = list(cron.find_comment(CRON_COMMENT))
+
+    if every or add:
+        every = every or 'day'
+        quoted = lambda s: f'"{s}"' if s and ' ' in str(s) else str(s)
         cmd = [
             'cd',
             quoted(out_dir),
             '&&',
             quoted(ARCHIVEBOX_BINARY),
-            *(['add', f'"{import_path}"'] if import_path else ['update']),
-            '2>&1',
+            *(['add', f'--depth={depth}', f'"{import_path}"'] if import_path else ['update']),
             '>',
-            quoted(os.path.join(LOGS_DIR, 'archivebox.log')),
+            quoted(Path(LOGS_DIR) / 'archivebox.log'),
+            '2>&1',
 
         ]
         new_job = cron.new(command=' '.join(cmd), comment=CRON_COMMENT)
 
-        if every in ('minute', 'hour', 'day', 'week', 'month', 'year'):
+        if every in ('minute', 'hour', 'day', 'month', 'year'):
             set_every = getattr(new_job.every(), every)
             set_every()
         elif CronSlices.is_valid(every):
             new_job.setall(every)
         else:
             stderr('{red}[X] Got invalid timeperiod for cron task.{reset}'.format(**ANSI))
-            stderr('    It must be one of minute/hour/day/week/month')
+            stderr('    It must be one of minute/hour/day/month')
             stderr('    or a quoted cron-format schedule like:')
             stderr('        archivebox init --every=day https://example.com/some/rss/feed.xml')
             stderr('        archivebox init --every="0/5 * * * *" https://example.com/some/rss/feed.xml')
@@ -998,15 +985,56 @@ def schedule(add: bool=False,
             stderr()
             stderr('    Make sure you have enough storage space available to hold all the data.')
             stderr('    Using a compressed/deduped filesystem like ZFS is recommended if you plan on archiving a lot.')
+            stderr('')
+    elif show:
+        if existing_jobs:
+            print('\n'.join(str(cmd) for cmd in existing_jobs))
+        else:
+            stderr('{red}[X] There are no ArchiveBox cron jobs scheduled for your user ({}).{reset}'.format(USER, **ANSI))
+            stderr('    To schedule a new job, run:')
+            stderr('        archivebox schedule --every=[timeperiod] https://example.com/some/rss/feed.xml')
         raise SystemExit(0)
 
+    cron = CronTab(user=True)
+    cron = dedupe_cron_jobs(cron)
+    existing_jobs = list(cron.find_comment(CRON_COMMENT))
 
+    if foreground or run_all:
+        if not existing_jobs:
+            stderr('{red}[X] You must schedule some jobs first before running in foreground mode.{reset}'.format(**ANSI))
+            stderr('    archivebox schedule --every=hour https://example.com/some/rss/feed.xml')
+            raise SystemExit(1)
+
+        print('{green}[*] Running {} ArchiveBox jobs in foreground task scheduler...{reset}'.format(len(existing_jobs), **ANSI))
+        if run_all:
+            try:
+                for job in existing_jobs:
+                    sys.stdout.write(f'  > {job.command.split("/archivebox ")[0].split(" && ")[0]}\n')
+                    sys.stdout.write(f'    > {job.command.split("/archivebox ")[-1].split(" > ")[0]}')
+                    sys.stdout.flush()
+                    job.run()
+                    sys.stdout.write(f'\r    √ {job.command.split("/archivebox ")[-1]}\n')
+            except KeyboardInterrupt:
+                print('\n{green}[√] Stopped.{reset}'.format(**ANSI))
+                raise SystemExit(1)
+
+        if foreground:
+            try:
+                for job in existing_jobs:
+                    print(f'  > {job.command.split("/archivebox ")[-1].split(" > ")[0]}')
+                for result in cron.run_scheduler():
+                    print(result)
+            except KeyboardInterrupt:
+                print('\n{green}[√] Stopped.{reset}'.format(**ANSI))
+                raise SystemExit(1)
+
+    
 @enforce_types
 def server(runserver_args: Optional[List[str]]=None,
            reload: bool=False,
            debug: bool=False,
            init: bool=False,
-           out_dir: str=OUTPUT_DIR) -> None:
+           out_dir: Path=OUTPUT_DIR) -> None:
     """Run the ArchiveBox HTTP server"""
 
     runserver_args = runserver_args or []
@@ -1029,7 +1057,7 @@ def server(runserver_args: Optional[List[str]]=None,
 
     print('{green}[+] Starting ArchiveBox webserver...{reset}'.format(**ANSI))
     if admin_user:
-        print("{lightred}[i] The admin username is:{lightblue} {}{reset}".format(admin_user.username, **ANSI))
+        hint('The admin username is{lightblue} {}{reset}\n'.format(admin_user.username, **ANSI))
     else:
         print('{lightyellow}[!] No admin users exist yet, you will not be able to edit links in the UI.{reset}'.format(**ANSI))
         print()
@@ -1053,19 +1081,23 @@ def server(runserver_args: Optional[List[str]]=None,
 
 
 @enforce_types
-def manage(args: Optional[List[str]]=None, out_dir: str=OUTPUT_DIR) -> None:
+def manage(args: Optional[List[str]]=None, out_dir: Path=OUTPUT_DIR) -> None:
     """Run an ArchiveBox Django management command"""
 
     check_data_folder(out_dir=out_dir)
-
     setup_django(out_dir)
     from django.core.management import execute_from_command_line
+
+    if (args and "createsuperuser" in args) and (IN_DOCKER and not IS_TTY):
+        stderr('[!] Warning: you need to pass -it to use interactive commands in docker', color='lightyellow')
+        stderr('    docker run -it archivebox manage {}'.format(' '.join(args or ['...'])), color='lightyellow')
+        stderr()
 
     execute_from_command_line([f'{ARCHIVEBOX_BINARY} manage', *(args or ['help'])])
 
 
 @enforce_types
-def shell(out_dir: str=OUTPUT_DIR) -> None:
+def shell(out_dir: Path=OUTPUT_DIR) -> None:
     """Enter an interactive ArchiveBox Django shell"""
 
     check_data_folder(out_dir=out_dir)

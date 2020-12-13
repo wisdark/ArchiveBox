@@ -5,18 +5,19 @@ import os
 import sys
 import argparse
 
-from typing import Optional, Dict, List, IO
+from typing import Optional, Dict, List, IO, Union
+from pathlib import Path
 
 from ..config import OUTPUT_DIR
 
 from importlib import import_module
 
-CLI_DIR = os.path.dirname(os.path.abspath(__file__))
+CLI_DIR = Path(__file__).resolve().parent
 
 # these common commands will appear sorted before any others for ease-of-use
 meta_cmds = ('help', 'version')
 main_cmds = ('init', 'info', 'config')
-archive_cmds = ('add', 'remove', 'update', 'list')
+archive_cmds = ('add', 'remove', 'update', 'list', 'status')
 
 display_first = (*meta_cmds, *main_cmds, *archive_cmds)
 
@@ -55,7 +56,7 @@ def list_subcommands() -> Dict[str, str]:
 def run_subcommand(subcommand: str,
                    subcommand_args: List[str]=None,
                    stdin: Optional[IO]=None,
-                   pwd: Optional[str]=None) -> None:
+                   pwd: Union[Path, str, None]=None) -> None:
     """Run a given ArchiveBox subcommand with the given list of args"""
 
     module = import_module('.archivebox_{}'.format(subcommand), __package__)
@@ -104,11 +105,11 @@ def main(args: Optional[List[str]]=NotProvided, stdin: Optional[IO]=NotProvided,
     )
     command = parser.parse_args(args or ())
 
-    if command.help or command.subcommand is None:
-        command.subcommand = 'help'
-    elif command.version:
+    if command.version:
         command.subcommand = 'version'
-    
+    elif command.help or command.subcommand is None:
+        command.subcommand = 'help'
+
     if command.subcommand not in ('help', 'version', 'status'):
         from ..logging_util import log_cli_command
 

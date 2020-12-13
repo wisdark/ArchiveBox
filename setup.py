@@ -1,44 +1,56 @@
+import json
 import setuptools
+
 from pathlib import Path
 
-PKG_NAME = "archivebox"
-REPO_URL = "https://github.com/pirate/ArchiveBox"
-BASE_DIR = Path(__file__).parent.resolve()
-SOURCE_DIR = BASE_DIR / PKG_NAME
-README = (BASE_DIR / "README.md").read_text()
-VERSION = (SOURCE_DIR / "VERSION").read_text().strip()
 
-# To see when setup.py gets called (uncomment for debugging)
+PKG_NAME = "archivebox"
+DESCRIPTION = "The self-hosted internet archive."
+LICENSE = "MIT"
+AUTHOR = "Nick Sweeting"
+AUTHOR_EMAIL="git@nicksweeting.com"
+REPO_URL = "https://github.com/ArchiveBox/ArchiveBox"
+PROJECT_URLS = {
+    "Source":           f"{REPO_URL}",
+    "Documentation":    f"{REPO_URL}/wiki",
+    "Bug Tracker":      f"{REPO_URL}/issues",
+    "Changelog":        f"{REPO_URL}/wiki/Changelog",
+    "Roadmap":          f"{REPO_URL}/wiki/Roadmap",
+    "Community":        f"{REPO_URL}/wiki/Web-Archiving-Community",
+    "Donate":           f"{REPO_URL}/wiki/Donations",
+}
+
+ROOT_DIR = Path(__file__).parent.resolve()
+PACKAGE_DIR = ROOT_DIR / PKG_NAME
+
+README = (PACKAGE_DIR / "README.md").read_text()
+VERSION = json.loads((PACKAGE_DIR / "package.json").read_text().strip())['version']
+
+# To see when setup.py gets called (uncomment for debugging):
 # import sys
-# print(SOURCE_DIR, f"     (v{VERSION})")
+# print(PACKAGE_DIR, f"     (v{VERSION})")
 # print('>', sys.executable, *sys.argv)
-# raise SystemExit(0)
+
 
 setuptools.setup(
     name=PKG_NAME,
     version=VERSION,
-    license="MIT",
-    author="Nick Sweeting",
-    author_email="git@nicksweeting.com",
-    description="The self-hosted internet archive.",
+    license=LICENSE,
+    author=AUTHOR,
+    author_email=AUTHOR_EMAIL,
+    description=DESCRIPTION,
     long_description=README,
     long_description_content_type="text/markdown",
     url=REPO_URL,
-    project_urls={
-        "Source":           f"{REPO_URL}",
-        "Documentation":    f"{REPO_URL}/wiki",
-        "Bug Tracker":      f"{REPO_URL}/issues",
-        "Changelog":        f"{REPO_URL}/wiki/Changelog",
-        "Roadmap":          f"{REPO_URL}/wiki/Roadmap",
-        "Community":        f"{REPO_URL}/wiki/Web-Archiving-Community",
-        "Donate":           f"{REPO_URL}/wiki/Donations",
-    },
+    project_urls=PROJECT_URLS,
     python_requires=">=3.7",
+    setup_requires=[
+        "wheel",
+    ],
     install_requires=[
         "requests==2.24.0",
         "atomicwrites==1.4.0",
         "mypy-extensions==0.4.3",
-        "base32-crockford==0.3.0",
         "django==3.0.8",
         "django-extensions==3.0.3",
 
@@ -46,6 +58,7 @@ setuptools.setup(
         "ipython",
         "youtube-dl",
         "python-crontab==2.5.1",
+        "croniter==0.3.34",
         "w3lib==1.22.0",
         # Some/all of these will likely be added in the future:
         # wpull
@@ -56,7 +69,6 @@ setuptools.setup(
     extras_require={
         'dev': [
             "setuptools",
-            "wheel",
             "twine",
             "flake8",
             "ipdb",
@@ -67,17 +79,18 @@ setuptools.setup(
             "recommonmark",
             "pytest",
             "bottle",
+            "stdeb",
         ],
         # 'redis': ['redis', 'django-redis'],
         # 'pywb': ['pywb', 'redis'],
     },
-    packages=setuptools.find_packages(),
+    packages=[PKG_NAME],
+    include_package_data=True,   # see MANIFEST.in
     entry_points={
         "console_scripts": [
             f"{PKG_NAME} = {PKG_NAME}.cli:main",
         ],
     },
-    include_package_data=True,
     classifiers=[
         "License :: OSI Approved :: MIT License",
         "Natural Language :: English",
@@ -91,9 +104,7 @@ setuptools.setup(
         "Topic :: Sociology :: History",
         "Topic :: Internet :: WWW/HTTP",
         "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
-        "Topic :: Internet :: WWW/HTTP :: WSGI",
         "Topic :: Internet :: WWW/HTTP :: WSGI :: Application",
-        "Topic :: Internet :: WWW/HTTP :: WSGI :: Server",
         "Topic :: Software Development :: Libraries :: Python Modules",
 
         "Intended Audience :: Developers",

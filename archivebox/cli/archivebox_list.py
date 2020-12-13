@@ -23,7 +23,7 @@ from ..index import (
     get_corrupted_folders,
     get_unrecognized_folders,
 )
-from ..logging_util import SmartFormatter, accept_stdin
+from ..logging_util import SmartFormatter, accept_stdin, stderr
 
 
 @docstring(list_all.__doc__)
@@ -45,6 +45,16 @@ def main(args: Optional[List[str]]=None, stdin: Optional[IO]=None, pwd: Optional
         '--json', #'-j',
         action='store_true',
         help="Print the output in JSON format with all columns included.",
+    )
+    group.add_argument(
+        '--html',
+        action='store_true',
+        help="Print the output in HTML format"
+    )
+    parser.add_argument(
+        '--with-headers',
+        action='store_true',
+        help='Include the headers in the output document' 
     )
     parser.add_argument(
         '--sort', #'-s',
@@ -88,7 +98,7 @@ def main(args: Optional[List[str]]=None, stdin: Optional[IO]=None, pwd: Optional
     parser.add_argument(
         '--filter-type',
         type=str,
-        choices=('exact', 'substring', 'domain', 'regex'),
+        choices=('exact', 'substring', 'domain', 'regex','tag'),
         default='exact',
         help='Type of pattern matching to use when filtering URLs',
     )
@@ -102,6 +112,13 @@ def main(args: Optional[List[str]]=None, stdin: Optional[IO]=None, pwd: Optional
     command = parser.parse_args(args or ())
     filter_patterns_str = accept_stdin(stdin)
 
+    if command.with_headers and not (command.json or command.html or command.csv):
+        stderr(
+            '[X] --with-headers can only be used with --json, --html or --csv options.\n',
+            color='red',
+        )
+        raise SystemExit(2)
+
     matching_folders = list_all(
         filter_patterns_str=filter_patterns_str,
         filter_patterns=command.filter_patterns,
@@ -112,6 +129,8 @@ def main(args: Optional[List[str]]=None, stdin: Optional[IO]=None, pwd: Optional
         sort=command.sort,
         csv=command.csv,
         json=command.json,
+        html=command.html,
+        with_headers=command.with_headers,
         out_dir=pwd or OUTPUT_DIR,
     )
     raise SystemExit(not matching_folders)

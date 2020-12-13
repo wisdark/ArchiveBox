@@ -1,6 +1,5 @@
 __package__ = 'archivebox.index'
 
-import os
 from pathlib import Path
 
 from datetime import datetime, timedelta
@@ -127,7 +126,7 @@ class Link:
 
 
     def __str__(self) -> str:
-        return f'[{self.timestamp}] {self.base_url} "{self.title}"'
+        return f'[{self.timestamp}] {self.url} "{self.title}"'
 
     def __post_init__(self):
         self.typecheck()
@@ -250,7 +249,7 @@ class Link:
     @property
     def link_dir(self) -> str:
         from ..config import CONFIG
-        return os.path.join(CONFIG['ARCHIVE_DIR'], self.timestamp)
+        return str(Path(CONFIG['ARCHIVE_DIR']) / self.timestamp)
 
     @property
     def archive_path(self) -> str:
@@ -365,10 +364,11 @@ class Link:
             'screenshot.png',
             'output.html',
             'media',
+            'singlefile.html'
         )
 
         return any(
-            os.path.exists(os.path.join(ARCHIVE_DIR, self.timestamp, path))
+            (Path(ARCHIVE_DIR) / self.timestamp / path).exists()
             for path in output_paths
         )
 
@@ -376,7 +376,7 @@ class Link:
         """get the latest output that each archive method produced for link"""
         
         ARCHIVE_METHODS = (
-            'title', 'favicon', 'wget', 'warc', 'pdf',
+            'title', 'favicon', 'wget', 'warc', 'singlefile', 'pdf',
             'screenshot', 'dom', 'git', 'media', 'archive_org',
         )
         latest: Dict[str, ArchiveOutput] = {}
@@ -392,7 +392,6 @@ class Link:
                 latest[archive_method] = history[0].output
             else:
                 latest[archive_method] = None
-
         return latest
 
 
@@ -406,6 +405,9 @@ class Link:
             'google_favicon_path': 'https://www.google.com/s2/favicons?domain={}'.format(self.domain),
             'wget_path': wget_output_path(self),
             'warc_path': 'warc',
+            'singlefile_path': 'singlefile.html',
+            'readability_path': 'readability/content.html',
+            'mercury_path': 'mercury/content.html',
             'pdf_path': 'output.pdf',
             'screenshot_path': 'screenshot.png',
             'dom_path': 'output.html',
@@ -425,7 +427,9 @@ class Link:
                 'pdf_path': static_path,
                 'screenshot_path': static_path,
                 'dom_path': static_path,
+                'singlefile_path': static_path,
+                'readability_path': static_path,
+                'mercury_path': static_path,
             })
         return canonical
-
 

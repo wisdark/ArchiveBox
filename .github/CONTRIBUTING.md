@@ -1,6 +1,6 @@
 # Contribution Process
 
-1. Confirm your desired features fit into our bigger project goals roadmap: https://github.com/pirate/ArchiveBox#roadmap
+1. Confirm your desired features fit into our bigger project goals [Roadmap](https://github.com/pirate/ArchiveBox/wiki/Roadmap).
 2. Open an issue with your planned implementation to discuss
 3. Check in with me before starting development to make sure your work wont conflict with or duplicate existing work
 4. Setup your dev environment, make some changes, and test using the test input files
@@ -19,22 +19,18 @@
 ```bash
 git clone https://github.com/pirate/ArchiveBox
 cd ArchiveBox
-# Optionally create a virtualenv
-pip install -r requirements.txt
-pip install -e .
+# Ideally do this in a virtualenv
+pip install -e '.[dev]'  # or use: pipenv install --dev
 ```
 
 ### Running Tests
 
 ```bash
-./bin/archive tests/*
-# look for errors in stdout/stderr
-# then confirm output html looks right
-
-# if on >v0.4 run the django test suite:
-archivebox manage test
+./bin/lint.sh
+./bin/test.sh
+./bin/build.sh
 ```
 
 ### Getting Help
 
-Open issues on Github or contact me https://sweeting.me/#contact.
+Open issues on Github or message me https://sweeting.me/#contact.

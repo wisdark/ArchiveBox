@@ -1,15 +1,16 @@
 __package__ = 'archivebox.extractors'
 
 import os
+from pathlib import Path
 
-from typing import Optional, List, Iterable
+from typing import Optional, List, Iterable, Union
 from datetime import datetime
+from django.db.models import QuerySet
 
 from ..index.schema import Link
 from ..index import (
     load_link_details,
     write_link_details,
-    patch_main_index,
 )
 from ..util import enforce_types
 from ..logging_util import (
@@ -25,48 +26,56 @@ from ..logging_util import (
 from .title import should_save_title, save_title
 from .favicon import should_save_favicon, save_favicon
 from .wget import should_save_wget, save_wget
+from .singlefile import should_save_singlefile, save_singlefile
+from .readability import should_save_readability, save_readability
+from .mercury import should_save_mercury, save_mercury
 from .pdf import should_save_pdf, save_pdf
 from .screenshot import should_save_screenshot, save_screenshot
 from .dom import should_save_dom, save_dom
 from .git import should_save_git, save_git
 from .media import should_save_media, save_media
 from .archive_org import should_save_archive_dot_org, save_archive_dot_org
+from .headers import should_save_headers, save_headers
 
 def get_default_archive_methods():
     return [
-            ('title', should_save_title, save_title),
-            ('favicon', should_save_favicon, save_favicon),
-            ('wget', should_save_wget, save_wget),
-            ('pdf', should_save_pdf, save_pdf),
-            ('screenshot', should_save_screenshot, save_screenshot),
-            ('dom', should_save_dom, save_dom),
-            ('git', should_save_git, save_git),
-            ('media', should_save_media, save_media),
-            ('archive_org', should_save_archive_dot_org, save_archive_dot_org),
-        ]
+        ('title', should_save_title, save_title),
+        ('favicon', should_save_favicon, save_favicon),
+        ('wget', should_save_wget, save_wget),
+        ('singlefile', should_save_singlefile, save_singlefile),
+        ('pdf', should_save_pdf, save_pdf),
+        ('screenshot', should_save_screenshot, save_screenshot),
+        ('dom', should_save_dom, save_dom),
+        ('readability', should_save_readability, save_readability), #keep readability below wget and singlefile, as it depends on them
+        ('mercury', should_save_mercury, save_mercury),
+        ('git', should_save_git, save_git),
+        ('media', should_save_media, save_media),
+        ('headers', should_save_headers, save_headers),
+        ('archive_org', should_save_archive_dot_org, save_archive_dot_org),
+    ]
 
 @enforce_types
 def ignore_methods(to_ignore: List[str]):
     ARCHIVE_METHODS = get_default_archive_methods()
     methods = filter(lambda x: x[0] not in to_ignore, ARCHIVE_METHODS)
-    methods = map(lambda x: x[1], methods)
+    methods = map(lambda x: x[0], methods)
     return list(methods)
 
 @enforce_types
-def archive_link(link: Link, overwrite: bool=False, methods: Optional[Iterable[str]]=None, out_dir: Optional[str]=None, skip_index: bool=False) -> Link:
+def archive_link(link: Link, overwrite: bool=False, methods: Optional[Iterable[str]]=None, out_dir: Optional[Path]=None, skip_index: bool=False) -> Link:
     """download the DOM, PDF, and a screenshot into a folder named after the link's timestamp"""
 
     ARCHIVE_METHODS = get_default_archive_methods()
     
-    if methods is not None:
+    if methods:
         ARCHIVE_METHODS = [
             method for method in ARCHIVE_METHODS
-            if method[1] in methods
+            if method[0] in methods
         ]
 
-    out_dir = out_dir or link.link_dir
+    out_dir = out_dir or Path(link.link_dir)
     try:
-        is_new = not os.path.exists(out_dir)
+        is_new = not Path(out_dir).exists()
         if is_new:
             os.makedirs(out_dir)
 
@@ -91,6 +100,7 @@ def archive_link(link: Link, overwrite: bool=False, methods: Optional[Iterable[s
                     stats[result.status] += 1
                     log_archive_method_finished(result)
                 else:
+                    # print('{black}      X {}{reset}'.format(method_name, **ANSI))
                     stats['skipped'] += 1
             except Exception as e:
                 raise Exception('Exception in archive_methods.save_{}(Link(url={}))'.format(
@@ -108,13 +118,6 @@ def archive_link(link: Link, overwrite: bool=False, methods: Optional[Iterable[s
             pass
 
         write_link_details(link, out_dir=out_dir, skip_sql_index=skip_index)
-        if not skip_index:
-            patch_main_index(link)
-
-        # # If any changes were made, update the main links index json and html
-        # was_changed = stats['succeeded'] or stats['failed']
-        # if was_changed:
-        #     patch_main_index(link)
 
         log_link_archiving_finished(link, link.link_dir, is_new, stats)
 
@@ -131,24 +134,33 @@ def archive_link(link: Link, overwrite: bool=False, methods: Optional[Iterable[s
 
     return link
 
-
 @enforce_types
-def archive_links(links: List[Link], overwrite: bool=False, methods: Optional[Iterable[str]]=None, out_dir: Optional[str]=None) -> List[Link]:
-    if not links:
+def archive_links(all_links: Union[Iterable[Link], QuerySet], overwrite: bool=False, methods: Optional[Iterable[str]]=None, out_dir: Optional[Path]=None) -> List[Link]:
+
+    if type(all_links) is QuerySet:
+        num_links: int = all_links.count()
+        get_link = lambda x: x.as_link()
+        all_links = all_links.iterator()
+    else:
+        num_links: int = len(all_links)
+        get_link = lambda x: x
+
+    if num_links == 0:
         return []
 
-    log_archiving_started(len(links))
+    log_archiving_started(num_links)
     idx: int = 0
-    link: Link = links[0]
     try:
-        for idx, link in enumerate(links):
-            archive_link(link, overwrite=overwrite, methods=methods, out_dir=link.link_dir)
+        for link in all_links:
+            idx += 1
+            to_archive = get_link(link)
+            archive_link(to_archive, overwrite=overwrite, methods=methods, out_dir=Path(link.link_dir))
     except KeyboardInterrupt:
-        log_archiving_paused(len(links), idx, link.timestamp)
+        log_archiving_paused(num_links, idx, link.timestamp)
         raise SystemExit(0)
     except BaseException:
         print()
         raise
 
-    log_archiving_finished(len(links))
-    return links
+    log_archiving_finished(num_links)
+    return all_links
