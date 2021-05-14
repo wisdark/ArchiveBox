@@ -12,9 +12,12 @@ IFS=$'\n'
 
 REPO_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && cd .. && pwd )"
 
-source "$REPO_DIR/.venv/bin/activate"
+if [[ -f "$REPO_DIR/.venv/bin/activate" ]]; then
+    source "$REPO_DIR/.venv/bin/activate"
+else
+    echo "[!] Warning: No virtualenv presesnt in $REPO_DIR.venv"
+fi
 cd "$REPO_DIR"
-
 
 
 echo "[*] Fetching latest docs version"

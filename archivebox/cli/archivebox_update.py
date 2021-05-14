@@ -12,6 +12,7 @@ from ..main import update
 from ..util import docstring
 from ..config import OUTPUT_DIR
 from ..index import (
+    LINK_FILTERS,
     get_indexed_folders,
     get_archived_folders,
     get_unarchived_folders,
@@ -89,9 +90,9 @@ def main(args: Optional[List[str]]=None, stdin: Optional[IO]=None, pwd: Optional
         )
     )
     parser.add_argument(
-        '--filter-type',
+        '--filter-type', '-t',
         type=str,
-        choices=('exact', 'substring', 'domain', 'regex'),
+        choices=(*LINK_FILTERS.keys(), 'search'),
         default='exact',
         help='Type of pattern matching to use when filtering URLs',
     )
@@ -102,8 +103,18 @@ def main(args: Optional[List[str]]=None, stdin: Optional[IO]=None, pwd: Optional
         default=None,
         help='Update only URLs matching these filter patterns.'
     )
+    parser.add_argument(
+        "--extract",
+        type=str,
+        help="Pass a list of the extractors to be used. If the method name is not correct, it will be ignored. \
+              This does not take precedence over the configuration",
+        default=""
+    )
     command = parser.parse_args(args or ())
-    filter_patterns_str = accept_stdin(stdin)
+
+    filter_patterns_str = None
+    if not command.filter_patterns:
+        filter_patterns_str = accept_stdin(stdin)
 
     update(
         resume=command.resume,
@@ -117,6 +128,7 @@ def main(args: Optional[List[str]]=None, stdin: Optional[IO]=None, pwd: Optional
         after=command.after,
         before=command.before,
         out_dir=pwd or OUTPUT_DIR,
+        extractors=command.extract,
     )
     
 

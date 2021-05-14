@@ -1,22 +1,21 @@
 __package__ = 'archivebox'
 
 import re
-from pathlib import Path
+import requests
 import json as pyjson
 
-
 from typing import List, Optional, Any
+from pathlib import Path
 from inspect import signature
 from functools import wraps
 from hashlib import sha256
 from urllib.parse import urlparse, quote, unquote
 from html import escape, unescape
-from datetime import datetime
+from datetime import datetime, timezone
 from dateparser import parse as dateparser
-
-import requests
 from requests.exceptions import RequestException, ReadTimeout
-from .base32_crockford import encode as base32_encode                            # type: ignore
+
+from .vendor.base32_crockford import encode as base32_encode                            # type: ignore
 from w3lib.encoding import html_body_declared_encoding, http_content_type_encoding
 
 try:
@@ -52,16 +51,18 @@ htmlencode = lambda s: s and escape(s, quote=True)
 htmldecode = lambda s: s and unescape(s)
 
 short_ts = lambda ts: str(parse_date(ts).timestamp()).split('.')[0]
-ts_to_date = lambda ts: ts and parse_date(ts).strftime('%Y-%m-%d %H:%M')
+ts_to_date_str = lambda ts: ts and parse_date(ts).strftime('%Y-%m-%d %H:%M')
 ts_to_iso = lambda ts: ts and parse_date(ts).isoformat()
 
 
 URL_REGEX = re.compile(
+    r'(?=('
     r'http[s]?://'                    # start matching from allowed schemes
     r'(?:[a-zA-Z]|[0-9]'              # followed by allowed alphanum characters
     r'|[$-_@.&+]|[!*\(\),]'           #    or allowed symbols
     r'|(?:%[0-9a-fA-F][0-9a-fA-F]))'  #    or allowed unicode bytes
-    r'[^\]\[\(\)<>"\'\s]+',         # stop parsing at these symbols
+    r'[^\]\[\(\)<>"\'\s]+'          # stop parsing at these symbols
+    r'))',
     re.IGNORECASE,
 )
 
@@ -143,13 +144,17 @@ def parse_date(date: Any) -> Optional[datetime]:
         return None
 
     if isinstance(date, datetime):
+        if date.tzinfo is None:
+            return date.replace(tzinfo=timezone.utc)
+
+        assert date.tzinfo.utcoffset(datetime.now()).seconds == 0, 'Refusing to load a non-UTC date!'
         return date
     
     if isinstance(date, (float, int)):
         date = str(date)
 
     if isinstance(date, str):
-        return dateparser(date)
+        return dateparser(date, settings={'TIMEZONE': 'UTC'}).replace(tzinfo=timezone.utc)
 
     raise ValueError('Tried to parse invalid date! {}'.format(date))
 
@@ -201,7 +206,13 @@ def get_headers(url: str, timeout: int=None) -> str:
             stream=True
         )
     
-    return pyjson.dumps(dict(response.headers), indent=4)
+    return pyjson.dumps(
+        {
+            'Status-Code': response.status_code,
+            **dict(response.headers),
+        },
+        indent=4,
+    )
 
 
 @enforce_types
@@ -211,6 +222,9 @@ def chrome_args(**options) -> List[str]:
     from .config import CHROME_OPTIONS
 
     options = {**CHROME_OPTIONS, **options}
+
+    if not options['CHROME_BINARY']:
+        raise Exception('Could not find any CHROME_BINARY installed on your system')
 
     cmd_args = [options['CHROME_BINARY']]
 
@@ -226,6 +240,8 @@ def chrome_args(**options) -> List[str]:
             '--disable-gpu',
             '--disable-dev-shm-usage',
             '--disable-software-rasterizer',
+            '--run-all-compositor-stages-before-draw',
+            '--hide-scrollbars',
         )
 
 
@@ -239,12 +255,13 @@ def chrome_args(**options) -> List[str]:
         cmd_args += ('--window-size={}'.format(options['RESOLUTION']),)
 
     if options['TIMEOUT']:
-        cmd_args += ('--timeout={}'.format((options['TIMEOUT']) * 1000),)
+        cmd_args += ('--timeout={}'.format(options['TIMEOUT'] * 1000),)
 
     if options['CHROME_USER_DATA_DIR']:
         cmd_args.append('--user-data-dir={}'.format(options['CHROME_USER_DATA_DIR']))
     
     return cmd_args
+
 
 def ansi_to_html(text):
     """

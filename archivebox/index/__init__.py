@@ -2,7 +2,6 @@ __package__ = 'archivebox.index'
 
 import os
 import shutil
-import json as pyjson
 from pathlib import Path
 
 from itertools import chain
@@ -18,7 +17,6 @@ from ..util import (
     ExtendedEncoder,
 )
 from ..config import (
-    setup_django,
     ARCHIVE_DIR_NAME,
     SQL_INDEX_FILENAME,
     JSON_INDEX_FILENAME,
@@ -43,6 +41,7 @@ from .html import (
     write_html_link_details,
 )
 from .json import (
+    pyjson,
     parse_json_link_details, 
     write_json_link_details,
 )
@@ -50,6 +49,8 @@ from .sql import (
     write_sql_main_index,
     write_sql_link_details,
 )
+
+from ..search import search_backend_enabled, query_search_index
 
 ### Link filtering and checking
 
@@ -123,7 +124,7 @@ def validate_links(links: Iterable[Link]) -> List[Link]:
     timer = TimedProgress(TIMEOUT * 4)
     try:
         links = archivable_links(links)  # remove chrome://, about:, mailto: etc.
-        links = sorted_links(links)      # deterministically sort the links based on timstamp, url
+        links = sorted_links(links)      # deterministically sort the links based on timestamp, url
         links = fix_duplicate_links(links)  # merge/dedupe duplicate timestamps & urls
     finally:
         timer.end()
@@ -221,7 +222,7 @@ def timed_index_update(out_path: Path):
 
 
 @enforce_types
-def write_main_index(links: List[Link], out_dir: Path=OUTPUT_DIR, finished: bool=False) -> None:
+def write_main_index(links: List[Link], out_dir: Path=OUTPUT_DIR) -> None:
     """Writes links to sqlite3 file for a given list of links"""
 
     log_indexing_process_started(len(links))
@@ -242,15 +243,8 @@ def write_main_index(links: List[Link], out_dir: Path=OUTPUT_DIR, finished: bool
     log_indexing_process_finished()
 
 @enforce_types
-def get_empty_snapshot_queryset(out_dir: Path=OUTPUT_DIR):
-    setup_django(out_dir, check_db=True)
-    from core.models import Snapshot
-    return Snapshot.objects.none()
-
-@enforce_types
 def load_main_index(out_dir: Path=OUTPUT_DIR, warn: bool=True) -> List[Link]:
     """parse and load existing index with any new links from import_path merged in"""
-    setup_django(out_dir, check_db=True)
     from core.models import Snapshot
     try:
         return Snapshot.objects.all()
@@ -271,14 +265,14 @@ def load_main_index_meta(out_dir: Path=OUTPUT_DIR) -> Optional[dict]:
 
 
 @enforce_types
-def parse_links_from_source(source_path: str, root_url: Optional[str]=None) -> Tuple[List[Link], List[Link]]:
+def parse_links_from_source(source_path: str, root_url: Optional[str]=None, parser: str="auto") -> Tuple[List[Link], List[Link]]:
 
     from ..parsers import parse_links
 
     new_links: List[Link] = []
 
     # parse and validate the import file
-    raw_links, parser_name = parse_links(source_path, root_url=root_url)
+    raw_links, parser_name = parse_links(source_path, root_url=root_url, parser=parser)
     new_links = validate_links(raw_links)
 
     if parser_name:
@@ -362,10 +356,11 @@ LINK_FILTERS = {
     'regex': lambda pattern: Q(url__iregex=pattern),
     'domain': lambda pattern: Q(url__istartswith=f"http://{pattern}") | Q(url__istartswith=f"https://{pattern}") | Q(url__istartswith=f"ftp://{pattern}"),
     'tag': lambda pattern: Q(tags__name=pattern),
+    'timestamp': lambda pattern: Q(timestamp=pattern),
 }
 
 @enforce_types
-def snapshot_filter(snapshots: QuerySet, filter_patterns: List[str], filter_type: str='exact') -> QuerySet:
+def q_filter(snapshots: QuerySet, filter_patterns: List[str], filter_type: str='exact') -> QuerySet:
     q_filter = Q()
     for pattern in filter_patterns:
         try:
@@ -380,10 +375,36 @@ def snapshot_filter(snapshots: QuerySet, filter_patterns: List[str], filter_type
             raise SystemExit(2)
     return snapshots.filter(q_filter)
 
+def search_filter(snapshots: QuerySet, filter_patterns: List[str], filter_type: str='search') -> QuerySet:
+    if not search_backend_enabled():
+        stderr()
+        stderr(
+                '[X] The search backend is not enabled, set config.USE_SEARCHING_BACKEND = True',
+                color='red',
+            )
+        raise SystemExit(2)
+    from core.models import Snapshot
+
+    qsearch = Snapshot.objects.none()
+    for pattern in filter_patterns:
+        try:
+            qsearch |= query_search_index(pattern)
+        except:
+            raise SystemExit(2)
+    
+    return snapshots & qsearch
+
+@enforce_types
+def snapshot_filter(snapshots: QuerySet, filter_patterns: List[str], filter_type: str='exact') -> QuerySet:
+    if filter_type != 'search':
+        return q_filter(snapshots, filter_patterns, filter_type)
+    else:
+        return search_filter(snapshots, filter_patterns, filter_type)
+
 
 def get_indexed_folders(snapshots, out_dir: Path=OUTPUT_DIR) -> Dict[str, Optional[Link]]:
     """indexed links without checking archive status or data directory validity"""
-    links = [snapshot.as_link() for snapshot in snapshots.iterator()]
+    links = [snapshot.as_link_with_details() for snapshot in snapshots.iterator()]
     return {
         link.link_dir: link
         for link in links
@@ -391,7 +412,7 @@ def get_indexed_folders(snapshots, out_dir: Path=OUTPUT_DIR) -> Dict[str, Option
 
 def get_archived_folders(snapshots, out_dir: Path=OUTPUT_DIR) -> Dict[str, Optional[Link]]:
     """indexed links that are archived with a valid data directory"""
-    links = [snapshot.as_link() for snapshot in snapshots.iterator()]
+    links = [snapshot.as_link_with_details() for snapshot in snapshots.iterator()]
     return {
         link.link_dir: link
         for link in filter(is_archived, links)
@@ -399,7 +420,7 @@ def get_archived_folders(snapshots, out_dir: Path=OUTPUT_DIR) -> Dict[str, Optio
 
 def get_unarchived_folders(snapshots, out_dir: Path=OUTPUT_DIR) -> Dict[str, Optional[Link]]:
     """indexed links that are unarchived with no data directory or an empty data directory"""
-    links = [snapshot.as_link() for snapshot in snapshots.iterator()]
+    links = [snapshot.as_link_with_details() for snapshot in snapshots.iterator()]
     return {
         link.link_dir: link
         for link in filter(is_unarchived, links)
@@ -424,7 +445,7 @@ def get_present_folders(snapshots, out_dir: Path=OUTPUT_DIR) -> Dict[str, Option
 
 def get_valid_folders(snapshots, out_dir: Path=OUTPUT_DIR) -> Dict[str, Optional[Link]]:
     """dirs with a valid index matched to the main index and archived content"""
-    links = [snapshot.as_link() for snapshot in snapshots.iterator()]
+    links = [snapshot.as_link_with_details() for snapshot in snapshots.iterator()]
     return {
         link.link_dir: link
         for link in filter(is_valid, links)

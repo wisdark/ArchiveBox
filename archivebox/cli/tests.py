@@ -75,23 +75,23 @@ def output_hidden(show_failing=True):
         yield
         return
 
-    sys.stdout = open('stdout.txt', 'w+')
-    sys.stderr = open('stderr.txt', 'w+')
+    sys.stdout = open('stdout.txt', 'w+', encoding='utf-8')
+    sys.stderr = open('stderr.txt', 'w+', encoding='utf-8')
     try:
         yield
         sys.stdout.close()
         sys.stderr.close()
         sys.stdout = stdout
         sys.stderr = stderr
-    except:
+    except Exception:
         sys.stdout.close()
         sys.stderr.close()
         sys.stdout = stdout
         sys.stderr = stderr
         if show_failing:
-            with open('stdout.txt', 'r') as f:
+            with open('stdout.txt', 'r', encoding='utf-8') as f:
                 print(f.read())
-            with open('stderr.txt', 'r') as f:
+            with open('stderr.txt', 'r', encoding='utf-8') as f:
                 print(f.read())
         raise
     finally:
@@ -116,7 +116,7 @@ class TestInit(unittest.TestCase):
         assert len(load_main_index(out_dir=OUTPUT_DIR)) == 0
 
     def test_conflicting_init(self):
-        with open(Path(OUTPUT_DIR) / 'test_conflict.txt', 'w+') as f:
+        with open(Path(OUTPUT_DIR) / 'test_conflict.txt', 'w+', encoding='utf-8') as f:
             f.write('test')
 
         try:
@@ -132,7 +132,7 @@ class TestInit(unittest.TestCase):
         try:
             load_main_index(out_dir=OUTPUT_DIR)
             assert False, 'load_main_index should raise an exception when no index is present'
-        except:
+        except Exception:
             pass
 
     def test_no_dirty_state(self):
@@ -161,7 +161,7 @@ class TestAdd(unittest.TestCase):
 
     def test_add_arg_file(self):
         test_file = Path(OUTPUT_DIR) / 'test.txt'
-        with open(test_file, 'w+') as f:
+        with open(test_file, 'w+', encoding='utf') as f:
             f.write(test_urls)
 
         with output_hidden():
@@ -216,7 +216,7 @@ class TestRemove(unittest.TestCase):
             with output_hidden(show_failing=False):
                 archivebox_remove.main(['--yes', '--delete', 'https://doesntexist.com'])
             assert False, 'Should raise if no URLs match'
-        except:
+        except Exception:
             pass
 
 

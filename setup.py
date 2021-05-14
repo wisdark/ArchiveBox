@@ -1,5 +1,6 @@
 import json
 import setuptools
+from setuptools.command.test import test
 
 from pathlib import Path
 
@@ -23,13 +24,63 @@ PROJECT_URLS = {
 ROOT_DIR = Path(__file__).parent.resolve()
 PACKAGE_DIR = ROOT_DIR / PKG_NAME
 
-README = (PACKAGE_DIR / "README.md").read_text()
+README = (PACKAGE_DIR / "README.md").read_text(encoding='utf-8', errors='ignore')
 VERSION = json.loads((PACKAGE_DIR / "package.json").read_text().strip())['version']
+
+PYTHON_REQUIRES = ">=3.7"
+SETUP_REQUIRES = ["wheel"]
+INSTALL_REQUIRES = [
+    # only add things here that have corresponding apt python3-packages available
+    # anything added here also needs to be added to our package dependencies in
+    # stdeb.cfg (apt), archivebox.rb (brew), Dockerfile, etc.
+    # if there is no apt python3-package equivalent, then vendor it instead in
+    # ./archivebox/vendor/
+    "requests>=2.24.0",
+    "mypy-extensions>=0.4.3",
+    "django>=3.1.3,<3.2",
+    "django-extensions>=3.0.3",
+    "dateparser",
+    "ipython",
+    "youtube-dl",
+    "python-crontab>=2.5.1",
+    "croniter>=0.3.34",
+    "w3lib>=1.22.0",
+]
+EXTRAS_REQUIRE = {
+    'sonic': [
+        "sonic-client>=0.0.5",
+    ],
+    'dev': [
+        "setuptools",
+        "twine",
+        "wheel",
+        "flake8",
+        "ipdb",
+        "mypy",
+        "django-stubs",
+        "sphinx",
+        "sphinx-rtd-theme",
+        "recommonmark",
+        "pytest",
+        "bottle",
+        "stdeb",
+        "django-debug-toolbar",
+        "djdt_flamegraph",
+    ],
+}
 
 # To see when setup.py gets called (uncomment for debugging):
 # import sys
 # print(PACKAGE_DIR, f"     (v{VERSION})")
 # print('>', sys.executable, *sys.argv)
+
+
+class DisabledTestCommand(test):
+    def run(self):
+        # setup.py test is deprecated, disable it here by force so stdeb doesnt run it
+        print()
+        print('[X] Running tests via setup.py test is deprecated.')
+        print('    Hint: Use the ./bin/test.sh script or pytest instead')
 
 
 setuptools.setup(
@@ -43,47 +94,10 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     url=REPO_URL,
     project_urls=PROJECT_URLS,
-    python_requires=">=3.7",
-    setup_requires=[
-        "wheel",
-    ],
-    install_requires=[
-        "requests==2.24.0",
-        "atomicwrites==1.4.0",
-        "mypy-extensions==0.4.3",
-        "django==3.0.8",
-        "django-extensions==3.0.3",
-
-        "dateparser",
-        "ipython",
-        "youtube-dl",
-        "python-crontab==2.5.1",
-        "croniter==0.3.34",
-        "w3lib==1.22.0",
-        # Some/all of these will likely be added in the future:
-        # wpull
-        # pywb
-        # pyppeteer
-        # archivenow
-    ],
-    extras_require={
-        'dev': [
-            "setuptools",
-            "twine",
-            "flake8",
-            "ipdb",
-            "mypy",
-            "django-stubs",
-            "sphinx",
-            "sphinx-rtd-theme",
-            "recommonmark",
-            "pytest",
-            "bottle",
-            "stdeb",
-        ],
-        # 'redis': ['redis', 'django-redis'],
-        # 'pywb': ['pywb', 'redis'],
-    },
+    python_requires=PYTHON_REQUIRES,
+    setup_requires=SETUP_REQUIRES,
+    install_requires=INSTALL_REQUIRES,
+    extras_require=EXTRAS_REQUIRE,
     packages=[PKG_NAME],
     include_package_data=True,   # see MANIFEST.in
     entry_points={
@@ -122,4 +136,7 @@ setuptools.setup(
         "Framework :: Django",
         "Typing :: Typed",
     ],
+    cmdclass={
+        "test": DisabledTestCommand,
+    },
 )

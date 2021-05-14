@@ -35,7 +35,7 @@ def get_html(link: Link, path: Path) -> str:
     document = None
     for source in sources:
         try:
-            with open(abs_path / source, "r") as f:
+            with open(abs_path / source, "r", encoding="utf-8") as f:
                 document = f.read()
                 break
         except (FileNotFoundError, TypeError):
@@ -46,13 +46,15 @@ def get_html(link: Link, path: Path) -> str:
         return document
 
 @enforce_types
-def should_save_readability(link: Link, out_dir: Optional[str]=None) -> bool:
-    out_dir = out_dir or link.link_dir
+def should_save_readability(link: Link, out_dir: Optional[str]=None, overwrite: Optional[bool]=False) -> bool:
     if is_static_file(link.url):
         return False
 
-    output = Path(out_dir or link.link_dir) / 'readability'
-    return SAVE_READABILITY and READABILITY_VERSION and (not output.exists())
+    out_dir = out_dir or Path(link.link_dir)
+    if not overwrite and (out_dir / 'readability').exists():
+        return False
+
+    return SAVE_READABILITY
 
 
 @enforce_types
@@ -61,7 +63,7 @@ def save_readability(link: Link, out_dir: Optional[str]=None, timeout: int=TIMEO
 
     out_dir = Path(out_dir or link.link_dir)
     output_folder = out_dir.absolute() / "readability"
-    output = str(output_folder)
+    output = "readability"
 
     # Readability Docs: https://github.com/mozilla/readability
 
@@ -71,6 +73,7 @@ def save_readability(link: Link, out_dir: Optional[str]=None, timeout: int=TIMEO
         CURL_BINARY,
         link.url
     ]
+    readability_content = None
     timer = TimedProgress(timeout, prefix='      ')
     try:
         document = get_html(link, out_dir)
@@ -78,16 +81,25 @@ def save_readability(link: Link, out_dir: Optional[str]=None, timeout: int=TIMEO
         temp_doc.write(document.encode("utf-8"))
         temp_doc.close()
 
+        if not document or len(document) < 10:
+            raise ArchiveError('Readability could not find HTML to parse for article text')
+
         cmd = [
             DEPENDENCIES['READABILITY_BINARY']['path'],
-            temp_doc.name
+            temp_doc.name,
         ]
 
         result = run(cmd, cwd=out_dir, timeout=timeout)
-        result_json = json.loads(result.stdout)
+        try:
+            result_json = json.loads(result.stdout)
+            assert result_json and 'content' in result_json
+        except json.JSONDecodeError:
+            raise ArchiveError('Readability was not able to archive the page', result.stdout + result.stderr)
+
         output_folder.mkdir(exist_ok=True)
+        readability_content = result_json.pop("textContent") 
         atomic_write(str(output_folder / "content.html"), result_json.pop("content"))
-        atomic_write(str(output_folder / "content.txt"), result_json.pop("textContent"))
+        atomic_write(str(output_folder / "content.txt"), readability_content)
         atomic_write(str(output_folder / "article.json"), result_json)
 
         # parse out number of files downloaded from last line of stderr:
@@ -108,6 +120,7 @@ def save_readability(link: Link, out_dir: Optional[str]=None, timeout: int=TIMEO
     except (Exception, OSError) as err:
         status = 'failed'
         output = err
+        cmd = [cmd[0], './{singlefile,dom}.html']
     finally:
         timer.end()
 
@@ -117,5 +130,6 @@ def save_readability(link: Link, out_dir: Optional[str]=None, timeout: int=TIMEO
         cmd_version=READABILITY_VERSION,
         output=output,
         status=status,
-        **timer.stats,
+        index_texts=[readability_content] if readability_content else [],
+        **timer.stats,  
     )

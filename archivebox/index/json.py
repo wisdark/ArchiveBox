@@ -5,17 +5,16 @@ import sys
 import json as pyjson
 from pathlib import Path
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional, Iterator, Any, Union
 
-from .schema import Link, ArchiveResult
+from .schema import Link
 from ..system import atomic_write
 from ..util import enforce_types
 from ..config import (
     VERSION,
     OUTPUT_DIR,
     FOOTER_INFO,
-    GIT_SHA,
     DEPENDENCIES,
     JSON_INDEX_FILENAME,
     ARCHIVE_DIR_NAME,
@@ -30,7 +29,7 @@ MAIN_INDEX_HEADER = {
     'meta': {
         'project': 'ArchiveBox',
         'version': VERSION,
-        'git_sha': GIT_SHA,
+        'git_sha': VERSION,  # not used anymore, but kept for backwards compatibility
         'website': 'https://ArchiveBox.io',
         'docs': 'https://github.com/ArchiveBox/ArchiveBox/wiki',
         'source': 'https://github.com/ArchiveBox/ArchiveBox',
@@ -39,7 +38,20 @@ MAIN_INDEX_HEADER = {
     },
 }
 
-### Main Links Index
+@enforce_types
+def generate_json_index_from_links(links: List[Link], with_headers: bool):
+    if with_headers:
+        output = {
+            **MAIN_INDEX_HEADER,
+            'num_links': len(links),
+            'updated': datetime.now(timezone.utc),
+            'last_run_cmd': sys.argv,
+            'links': links,
+        }
+    else:
+        output = links
+    return to_json(output, indent=4, sort_keys=True)
+
 
 @enforce_types
 def parse_json_main_index(out_dir: Path=OUTPUT_DIR) -> Iterator[Link]:
@@ -48,7 +60,18 @@ def parse_json_main_index(out_dir: Path=OUTPUT_DIR) -> Iterator[Link]:
     index_path = Path(out_dir) / JSON_INDEX_FILENAME
     if index_path.exists():
         with open(index_path, 'r', encoding='utf-8') as f:
-            links = pyjson.load(f)['links']
+            try:
+                links = pyjson.load(f)['links']
+                if links:
+                    Link.from_json(links[0])
+            except Exception as err:
+                print("    {lightyellow}! Found an index.json in the project root but couldn't load links from it: {} {}".format(
+                    err.__class__.__name__,
+                    err,
+                    **ANSI,
+                ))
+                return ()
+
             for link_json in links:
                 try:
                     yield Link.from_json(link_json)
@@ -64,30 +87,6 @@ def parse_json_main_index(out_dir: Path=OUTPUT_DIR) -> Iterator[Link]:
                             print("    {lightyellow}! Failed to load the index.json from {}".format(detail_index_path, **ANSI))
                             continue
     return ()
-
-@enforce_types
-def write_json_main_index(links: List[Link], out_dir: Path=OUTPUT_DIR) -> None:
-    """write the json link index to a given path"""
-
-    assert isinstance(links, List), 'Links must be a list, not a generator.'
-    assert not links or isinstance(links[0].history, dict)
-    assert not links or isinstance(links[0].sources, list)
-
-    if links and links[0].history.get('title'):
-        assert isinstance(links[0].history['title'][0], ArchiveResult)
-
-    if links and links[0].sources:
-        assert isinstance(links[0].sources[0], str)
-
-    main_index_json = {
-        **MAIN_INDEX_HEADER,
-        'num_links': len(links),
-        'updated': datetime.now(),
-        'last_run_cmd': sys.argv,
-        'links': links,
-    }
-    atomic_write(str(Path(out_dir) / JSON_INDEX_FILENAME), main_index_json)
-
 
 ### Link Details Index
 

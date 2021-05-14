@@ -37,14 +37,24 @@ def main(args: Optional[List[str]]=None, stdin: Optional[IO]=None, pwd: Optional
         )
     )
     parser.add_argument(
+        "--extract",
+        type=str,
+        help="Pass a list of the extractors to be used. If the method name is not correct, it will be ignored. \
+              This does not take precedence over the configuration",
+        default=""
+    )
+    parser.add_argument(
         '--out-dir',
         type=str,
         default=OUTPUT_DIR,
         help= "Path to save the single archive folder to, e.g. ./example.com_archive"
     )
     command = parser.parse_args(args or ())
+    stdin_url = None
     url = command.url
-    stdin_url = accept_stdin(stdin)
+    if not url:
+        stdin_url = accept_stdin(stdin)
+
     if (stdin_url and url) or (not stdin and not url):
         stderr(
             '[X] You must pass a URL/path to add via stdin or CLI arguments.\n',
@@ -55,6 +65,7 @@ def main(args: Optional[List[str]]=None, stdin: Optional[IO]=None, pwd: Optional
     oneshot(
         url=stdin_url or url,
         out_dir=Path(command.out_dir).resolve(),
+        extractors=command.extract,
     )
 
 

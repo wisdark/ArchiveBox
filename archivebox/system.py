@@ -2,34 +2,76 @@ __package__ = 'archivebox'
 
 
 import os
+import signal
 import shutil
 
 from json import dump
 from pathlib import Path
 from typing import Optional, Union, Set, Tuple
-from subprocess import run as subprocess_run
+from subprocess import _mswindows, PIPE, Popen, CalledProcessError, CompletedProcess, TimeoutExpired
 
 from crontab import CronTab
-from atomicwrites import atomic_write as lib_atomic_write
+from .vendor.atomicwrites import atomic_write as lib_atomic_write
 
 from .util import enforce_types, ExtendedEncoder
 from .config import OUTPUT_PERMISSIONS
 
 
 
-def run(*args, input=None, capture_output=True, text=False, **kwargs):
-    """Patched of subprocess.run to fix blocking io making timeout=innefective"""
+def run(*args, input=None, capture_output=True, timeout=None, check=False, text=False, start_new_session=True, **kwargs):
+    """Patched of subprocess.run to kill forked child subprocesses and fix blocking io making timeout=innefective
+        Mostly copied from https://github.com/python/cpython/blob/master/Lib/subprocess.py
+    """
 
     if input is not None:
-        if 'stdin' in kwargs:
+        if kwargs.get('stdin') is not None:
             raise ValueError('stdin and input arguments may not both be used.')
+        kwargs['stdin'] = PIPE
 
     if capture_output:
         if ('stdout' in kwargs) or ('stderr' in kwargs):
             raise ValueError('stdout and stderr arguments may not be used '
                              'with capture_output.')
+        kwargs['stdout'] = PIPE
+        kwargs['stderr'] = PIPE
 
-    return subprocess_run(*args, input=input, capture_output=capture_output, text=text, **kwargs)
+    pgid = None
+    try:
+        with Popen(*args, start_new_session=start_new_session, **kwargs) as process:
+            pgid = os.getpgid(process.pid)
+            try:
+                stdout, stderr = process.communicate(input, timeout=timeout)
+            except TimeoutExpired as exc:
+                process.kill()
+                if _mswindows:
+                    # Windows accumulates the output in a single blocking
+                    # read() call run on child threads, with the timeout
+                    # being done in a join() on those threads.  communicate()
+                    # _after_ kill() is required to collect that and add it
+                    # to the exception.
+                    exc.stdout, exc.stderr = process.communicate()
+                else:
+                    # POSIX _communicate already populated the output so
+                    # far into the TimeoutExpired exception.
+                    process.wait()
+                raise
+            except:  # Including KeyboardInterrupt, communicate handled that.
+                process.kill()
+                # We don't call process.wait() as .__exit__ does that for us.
+                raise
+
+            retcode = process.poll()
+            if check and retcode:
+                raise CalledProcessError(retcode, process.args,
+                                         output=stdout, stderr=stderr)
+    finally:
+        # force kill any straggler subprocesses that were forked from the main proc
+        try:
+            os.killpg(pgid, signal.SIGINT)
+        except Exception:
+            pass
+
+    return CompletedProcess(process.args, retcode, stdout, stderr)
 
 
 @enforce_types
@@ -37,18 +79,19 @@ def atomic_write(path: Union[Path, str], contents: Union[dict, str, bytes], over
     """Safe atomic write to filesystem by writing to temp file + atomic rename"""
 
     mode = 'wb+' if isinstance(contents, bytes) else 'w'
+    encoding = None if isinstance(contents, bytes) else 'utf-8'  # enforce utf-8 on all text writes
 
     # print('\n> Atomic Write:', mode, path, len(contents), f'overwrite={overwrite}')
     try:
-        with lib_atomic_write(path, mode=mode, overwrite=overwrite) as f:
+        with lib_atomic_write(path, mode=mode, overwrite=overwrite, encoding=encoding) as f:
             if isinstance(contents, dict):
                 dump(contents, f, indent=4, sort_keys=True, cls=ExtendedEncoder)
             elif isinstance(contents, (bytes, str)):
                 f.write(contents)
     except OSError as e:
         print(f"[X] OSError: Failed to write {path} with fcntl.F_FULLFSYNC. ({e})")
-        print("    For data integrity, ArchiveBox requires a filesystem that supports atomic writes.")
-        print("    Filesystems and network drives that don't implement FSYNC are incompatible and require workarounds.")
+        print("    You can store the archive/ subfolder on a hard drive or network share that doesn't support support syncronous writes,")
+        print("    but the main folder containing the index.sqlite3 and ArchiveBox.conf files must be on a filesystem that supports FSYNC.")
         raise SystemExit(1)
     os.chmod(path, int(OUTPUT_PERMISSIONS, base=8))
 
