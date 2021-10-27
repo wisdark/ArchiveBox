@@ -48,6 +48,15 @@ from .config_stubs import (
     ConfigDefaultDict,
 )
 
+SYSTEM_USER = getpass.getuser() or os.getlogin()
+
+try:
+    import pwd
+    SYSTEM_USER = pwd.getpwuid(os.geteuid()).pw_name or SYSTEM_USER
+except ModuleNotFoundError:
+    # pwd is only needed for some linux systems, doesn't exist on windows
+    pass
+
 ############################### Config Schema ##################################
 
 CONFIG_SCHEMA: Dict[str, ConfigDefaultDict] = {
@@ -65,9 +74,11 @@ CONFIG_SCHEMA: Dict[str, ConfigDefaultDict] = {
         'ONLY_NEW':                 {'type': bool,  'default': True},
         'TIMEOUT':                  {'type': int,   'default': 60},
         'MEDIA_TIMEOUT':            {'type': int,   'default': 3600},
-        'OUTPUT_PERMISSIONS':       {'type': str,   'default': '755'},
+        'OUTPUT_PERMISSIONS':       {'type': str,   'default': '644'},
         'RESTRICT_FILE_NAMES':      {'type': str,   'default': 'windows'},
         'URL_BLACKLIST':            {'type': str,   'default': r'\.(css|js|otf|ttf|woff|woff2|gstatic\.com|googleapis\.com/css)(\?.*)?$'},  # to avoid downloading code assets as their own pages
+        'URL_WHITELIST':            {'type': str,   'default': None},
+        'ENFORCE_ATOMIC_WRITES':    {'type': bool,  'default': True},
     },
 
     'SERVER_CONFIG': {
@@ -312,7 +323,7 @@ ALLOWED_IN_OUTPUT_DIR = {
 
 DYNAMIC_CONFIG_SCHEMA: ConfigDefaultDict = {
     'TERM_WIDTH':               {'default': lambda c: lambda: shutil.get_terminal_size((100, 10)).columns},
-    'USER':                     {'default': lambda c: getpass.getuser() or os.getlogin()},
+    'USER':                     {'default': lambda c: SYSTEM_USER},
     'ANSI':                     {'default': lambda c: DEFAULT_CLI_COLORS if c['USE_COLOR'] else {k: '' for k in DEFAULT_CLI_COLORS.keys()}},
 
     'PACKAGE_DIR':              {'default': lambda c: Path(__file__).resolve().parent},
@@ -327,6 +338,8 @@ DYNAMIC_CONFIG_SCHEMA: ConfigDefaultDict = {
     'COOKIES_FILE':             {'default': lambda c: c['COOKIES_FILE'] and Path(c['COOKIES_FILE']).resolve()},
     'CHROME_USER_DATA_DIR':     {'default': lambda c: find_chrome_data_dir() if c['CHROME_USER_DATA_DIR'] is None else (Path(c['CHROME_USER_DATA_DIR']).resolve() if c['CHROME_USER_DATA_DIR'] else None)},   # None means unset, so we autodetect it with find_chrome_Data_dir(), but emptystring '' means user manually set it to '', and we should store it as None
     'URL_BLACKLIST_PTN':        {'default': lambda c: c['URL_BLACKLIST'] and re.compile(c['URL_BLACKLIST'] or '', re.IGNORECASE | re.UNICODE | re.MULTILINE)},
+    'URL_WHITELIST_PTN':        {'default': lambda c: c['URL_WHITELIST'] and re.compile(c['URL_WHITELIST'] or '', re.IGNORECASE | re.UNICODE | re.MULTILINE)},
+    'DIR_OUTPUT_PERMISSIONS':   {'default': lambda c: c['OUTPUT_PERMISSIONS'].replace('6', '7').replace('4', '5')},
 
     'ARCHIVEBOX_BINARY':        {'default': lambda c: sys.argv[0] or bin_path('archivebox')},
     'VERSION':                  {'default': lambda c: json.loads((Path(c['PACKAGE_DIR']) / 'package.json').read_text(encoding='utf-8').strip())['version']},
@@ -957,7 +970,7 @@ globals().update(CONFIG)
 
 # Set timezone to UTC and umask to OUTPUT_PERMISSIONS
 os.environ["TZ"] = 'UTC'
-os.umask(0o777 - int(OUTPUT_PERMISSIONS, base=8))  # noqa: F821
+os.umask(0o777 - int(DIR_OUTPUT_PERMISSIONS, base=8))  # noqa: F821
 
 # add ./node_modules/.bin to $PATH so we can use node scripts in extractors
 NODE_BIN_PATH = str((Path(CONFIG["OUTPUT_DIR"]).absolute() / 'node_modules' / '.bin'))
@@ -986,6 +999,11 @@ def check_system_config(config: ConfigDict=CONFIG) -> None:
     if sys.version_info[:3] < (3, 6, 0):
         stderr(f'[X] Python version is not new enough: {config["PYTHON_VERSION"]} (>3.6 is required)', color='red')
         stderr('    See https://github.com/ArchiveBox/ArchiveBox/wiki/Troubleshooting#python for help upgrading your Python installation.')
+        raise SystemExit(2)
+
+    if int(CONFIG['DJANGO_VERSION'].split('.')[0]) < 3:
+        stderr(f'[X] Django version is not new enough: {config["DJANGO_VERSION"]} (>3.0 is required)', color='red')
+        stderr('    Upgrade django using pip or your system package manager: pip3 install --upgrade django')
         raise SystemExit(2)
 
     if config['PYTHON_ENCODING'] not in ('UTF-8', 'UTF8'):

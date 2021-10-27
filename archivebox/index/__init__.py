@@ -23,6 +23,7 @@ from ..config import (
     OUTPUT_DIR,
     TIMEOUT,
     URL_BLACKLIST_PTN,
+    URL_WHITELIST_PTN,
     stderr,
     OUTPUT_PERMISSIONS
 )
@@ -142,6 +143,8 @@ def archivable_links(links: Iterable[Link]) -> Iterable[Link]:
         if scheme(link.url) not in ('http', 'https', 'ftp'):
             continue
         if URL_BLACKLIST_PTN and URL_BLACKLIST_PTN.search(link.url):
+            continue
+        if URL_WHITELIST_PTN and (not URL_WHITELIST_PTN.search(link.url)):
             continue
 
         yield link
