@@ -8,7 +8,7 @@
 # Documentation:
 #     https://github.com/ArchiveBox/ArchiveBox/wiki/Docker#docker-compose
 
-version: '2.4'
+version: '2.4'   # '3.9' or greater also works
 
 services:
     archivebox:
@@ -87,5 +87,5 @@ services:
     #     ports:
     #         - 8080:8080
     #     volumes:
-    #         ./data:/archivebox
-    #         ./data/wayback:/webarchive
+    #         - ./data:/archivebox
+    #         - ./data/wayback:/webarchive

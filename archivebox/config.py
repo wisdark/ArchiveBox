@@ -79,6 +79,7 @@ CONFIG_SCHEMA: Dict[str, ConfigDefaultDict] = {
         'URL_BLACKLIST':            {'type': str,   'default': r'\.(css|js|otf|ttf|woff|woff2|gstatic\.com|googleapis\.com/css)(\?.*)?$'},  # to avoid downloading code assets as their own pages
         'URL_WHITELIST':            {'type': str,   'default': None},
         'ENFORCE_ATOMIC_WRITES':    {'type': bool,  'default': True},
+        'TAG_SEPARATOR_PATTERN':    {'type': str,   'default': r'[,]'},
     },
 
     'SERVER_CONFIG': {
@@ -649,7 +650,7 @@ def bin_version(binary: Optional[str]) -> Optional[str]:
         return None
 
     try:
-        version_str = run([abspath, "--version"], stdout=PIPE).stdout.strip().decode()
+        version_str = run([abspath, "--version"], stdout=PIPE, env={'LANG': 'C'}).stdout.strip().decode()
         # take first 3 columns of first line of version info
         return ' '.join(version_str.split('\n')[0].strip().split()[:3])
     except OSError:
@@ -1157,7 +1158,7 @@ def setup_django(out_dir: Path=None, check_db=False, config: ConfigDict=CONFIG, 
         from django.conf import settings
 
         # log startup message to the error log
-        with open(settings.ERROR_LOG, "a+", encoding='utf-8') as f:
+        with open(settings.ERROR_LOG, "a", encoding='utf-8') as f:
             command = ' '.join(sys.argv)
             ts = datetime.now(timezone.utc).strftime('%Y-%m-%d__%H:%M:%S')
             f.write(f"\n> {command}; ts={ts} version={config['VERSION']} docker={config['IN_DOCKER']} is_tty={config['IS_TTY']}\n")
