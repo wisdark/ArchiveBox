@@ -26,11 +26,12 @@ import io
 import re
 import sys
 import json
+import inspect
 import getpass
 import platform
 import shutil
-import sqlite3
 import django
+from sqlite3 import dbapi2 as sqlite3
 
 from hashlib import md5
 from pathlib import Path
@@ -47,6 +48,9 @@ from .config_stubs import (
     ConfigDefaultValue,
     ConfigDefaultDict,
 )
+
+
+### Pre-Fetch Minimal System Config
 
 SYSTEM_USER = getpass.getuser() or os.getlogin()
 
@@ -65,6 +69,8 @@ CONFIG_SCHEMA: Dict[str, ConfigDefaultDict] = {
         'USE_COLOR':                {'type': bool,  'default': lambda c: c['IS_TTY']},
         'SHOW_PROGRESS':            {'type': bool,  'default': lambda c: (c['IS_TTY'] and platform.system() != 'Darwin')},  # progress bars are buggy on mac, disable for now
         'IN_DOCKER':                {'type': bool,  'default': False},
+        'PUID':                     {'type': int,   'default': os.getuid()},
+        'PGID':                     {'type': int,   'default': os.getgid()},
         # TODO: 'SHOW_HINTS':       {'type:  bool,  'default': True},
     },
 
@@ -93,7 +99,8 @@ CONFIG_SCHEMA: Dict[str, ConfigDefaultDict] = {
         'FOOTER_INFO':              {'type': str,   'default': 'Content is hosted for personal archiving purposes only.  Contact server owner for any takedown requests.'},
         'SNAPSHOTS_PER_PAGE':       {'type': int,   'default': 40},
         'CUSTOM_TEMPLATES_DIR':     {'type': str,   'default': None},
-        'TIME_ZONE':                {'type': str,   'default': 'UTC'},
+        'TIMEZONE':                 {'type': str,   'default': 'UTC'},
+        'PREVIEW_ORIGINALS':        {'type': bool,  'default': True},
     },
 
     'ARCHIVE_METHOD_TOGGLES': {
@@ -120,9 +127,9 @@ CONFIG_SCHEMA: Dict[str, ConfigDefaultDict] = {
         'CHECK_SSL_VALIDITY':       {'type': bool,  'default': True},
         'MEDIA_MAX_SIZE':           {'type': str,   'default': '750m'},
 
-        'CURL_USER_AGENT':          {'type': str,   'default': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.61 Safari/537.36 ArchiveBox/{VERSION} (+https://github.com/ArchiveBox/ArchiveBox/) curl/{CURL_VERSION}'},
-        'WGET_USER_AGENT':          {'type': str,   'default': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.61 Safari/537.36 ArchiveBox/{VERSION} (+https://github.com/ArchiveBox/ArchiveBox/) wget/{WGET_VERSION}'},
-        'CHROME_USER_AGENT':        {'type': str,   'default': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.61 Safari/537.36 ArchiveBox/{VERSION} (+https://github.com/ArchiveBox/ArchiveBox/)'},
+        'CURL_USER_AGENT':          {'type': str,   'default': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Chrome/102.0.0.0 Safari/605.1.15 ArchiveBox/{VERSION} (+https://github.com/ArchiveBox/ArchiveBox/) curl/{CURL_VERSION}'},
+        'WGET_USER_AGENT':          {'type': str,   'default': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Chrome/102.0.0.0 Safari/605.1.15 ArchiveBox/{VERSION} (+https://github.com/ArchiveBox/ArchiveBox/) wget/{WGET_VERSION}'},
+        'CHROME_USER_AGENT':        {'type': str,   'default': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Chrome/102.0.0.0 Safari/605.1.15 ArchiveBox/{VERSION} (+https://github.com/ArchiveBox/ArchiveBox/)'},
 
         'COOKIES_FILE':             {'type': str,   'default': None},
         'CHROME_USER_DATA_DIR':     {'type': str,   'default': None},
@@ -142,6 +149,7 @@ CONFIG_SCHEMA: Dict[str, ConfigDefaultDict] = {
                                                                 '--yes-playlist',
                                                                 '--continue',
                                                                 '--ignore-errors',
+                                                                '--no-abort-on-error',
                                                                 '--geo-bypass',
                                                                 '--add-metadata',
                                                                 '--max-filesize={}'.format(c['MEDIA_MAX_SIZE']),
@@ -319,6 +327,15 @@ ALLOWED_IN_OUTPUT_DIR = {
     'static_index.json',
 }
 
+def get_version(config):
+    return json.loads((Path(config['PACKAGE_DIR']) / 'package.json').read_text(encoding='utf-8').strip())['version']
+
+def get_commit_hash(config):
+    try:
+        return list((config['PACKAGE_DIR'] / '../.git/refs/heads/').glob('*'))[0].read_text().strip()
+    except Exception:
+        return None
+
 ############################## Derived Config ##################################
 
 
@@ -343,14 +360,20 @@ DYNAMIC_CONFIG_SCHEMA: ConfigDefaultDict = {
     'DIR_OUTPUT_PERMISSIONS':   {'default': lambda c: c['OUTPUT_PERMISSIONS'].replace('6', '7').replace('4', '5')},
 
     'ARCHIVEBOX_BINARY':        {'default': lambda c: sys.argv[0] or bin_path('archivebox')},
-    'VERSION':                  {'default': lambda c: json.loads((Path(c['PACKAGE_DIR']) / 'package.json').read_text(encoding='utf-8').strip())['version']},
-
+    'VERSION':                  {'default': lambda c: get_version(c)},
+    'COMMIT_HASH':              {'default': lambda c: get_commit_hash(c)},
+    
     'PYTHON_BINARY':            {'default': lambda c: sys.executable},
     'PYTHON_ENCODING':          {'default': lambda c: sys.stdout.encoding.upper()},
     'PYTHON_VERSION':           {'default': lambda c: '{}.{}.{}'.format(*sys.version_info[:3])},
 
-    'DJANGO_BINARY':            {'default': lambda c: django.__file__.replace('__init__.py', 'bin/django-admin.py')},
+    'DJANGO_BINARY':            {'default': lambda c: inspect.getfile(django)},
     'DJANGO_VERSION':           {'default': lambda c: '{}.{}.{} {} ({})'.format(*django.VERSION)},
+    
+    'SQLITE_BINARY':            {'default': lambda c: inspect.getfile(sqlite3)},
+    'SQLITE_VERSION':           {'default': lambda c: sqlite3.version},
+    #'SQLITE_JOURNAL_MODE':      {'default': lambda c: 'wal'},         # set at runtime below, interesting but unused for now
+    #'SQLITE_OPTIONS':           {'default': lambda c: ['JSON1']},     # set at runtime below
 
     'USE_CURL':                 {'default': lambda c: c['USE_CURL'] and (c['SAVE_FAVICON'] or c['SAVE_TITLE'] or c['SAVE_ARCHIVE_DOT_ORG'])},
     'CURL_VERSION':             {'default': lambda c: bin_version(c['CURL_BINARY']) if c['USE_CURL'] else None},
@@ -651,6 +674,8 @@ def bin_version(binary: Optional[str]) -> Optional[str]:
 
     try:
         version_str = run([abspath, "--version"], stdout=PIPE, env={'LANG': 'C'}).stdout.strip().decode()
+        if not version_str:
+            version_str = run([abspath, "--version"], stdout=PIPE).stdout.strip().decode()
         # take first 3 columns of first line of version info
         return ' '.join(version_str.split('\n')[0].strip().split()[:3])
     except OSError:
@@ -793,6 +818,7 @@ def get_data_locations(config: ConfigDict) -> ConfigValue:
             'path': config['OUTPUT_DIR'].resolve(),
             'enabled': True,
             'is_valid': (config['OUTPUT_DIR'] / SQL_INDEX_FILENAME).exists(),
+            'is_mount': os.path.ismount(config['OUTPUT_DIR'].resolve()),
         },
         'SOURCES_DIR': {
             'path': config['SOURCES_DIR'].resolve(),
@@ -808,6 +834,7 @@ def get_data_locations(config: ConfigDict) -> ConfigValue:
             'path': config['ARCHIVE_DIR'].resolve(),
             'enabled': True,
             'is_valid': config['ARCHIVE_DIR'].exists(),
+            'is_mount': os.path.ismount(config['ARCHIVE_DIR'].resolve()),
         },
         'CONFIG_FILE': {
             'path': config['CONFIG_FILE'].resolve(),
@@ -818,24 +845,25 @@ def get_data_locations(config: ConfigDict) -> ConfigValue:
             'path': (config['OUTPUT_DIR'] / SQL_INDEX_FILENAME).resolve(),
             'enabled': True,
             'is_valid': (config['OUTPUT_DIR'] / SQL_INDEX_FILENAME).exists(),
+            'is_mount': os.path.ismount((config['OUTPUT_DIR'] / SQL_INDEX_FILENAME).resolve()),
         },
     }
 
 def get_dependency_info(config: ConfigDict) -> ConfigValue:
     return {
-        'ARCHIVEBOX_BINARY': {
-            'path': bin_path(config['ARCHIVEBOX_BINARY']),
-            'version': config['VERSION'],
-            'hash': bin_hash(config['ARCHIVEBOX_BINARY']),
-            'enabled': True,
-            'is_valid': True,
-        },
         'PYTHON_BINARY': {
             'path': bin_path(config['PYTHON_BINARY']),
             'version': config['PYTHON_VERSION'],
             'hash': bin_hash(config['PYTHON_BINARY']),
             'enabled': True,
             'is_valid': bool(config['PYTHON_VERSION']),
+        },
+        'SQLITE_BINARY': {
+            'path': bin_path(config['SQLITE_BINARY']),
+            'version': config['SQLITE_VERSION'],
+            'hash': bin_hash(config['SQLITE_BINARY']),
+            'enabled': True,
+            'is_valid': bool(config['SQLITE_VERSION']),
         },
         'DJANGO_BINARY': {
             'path': bin_path(config['DJANGO_BINARY']),
@@ -844,6 +872,14 @@ def get_dependency_info(config: ConfigDict) -> ConfigValue:
             'enabled': True,
             'is_valid': bool(config['DJANGO_VERSION']),
         },
+        'ARCHIVEBOX_BINARY': {
+            'path': bin_path(config['ARCHIVEBOX_BINARY']),
+            'version': config['VERSION'],
+            'hash': bin_hash(config['ARCHIVEBOX_BINARY']),
+            'enabled': True,
+            'is_valid': True,
+        },
+        
         'CURL_BINARY': {
             'path': bin_path(config['CURL_BINARY']),
             'version': config['CURL_VERSION'],
@@ -929,7 +965,7 @@ def get_chrome_info(config: ConfigDict) -> ConfigValue:
         'TIMEOUT': config['TIMEOUT'],
         'RESOLUTION': config['RESOLUTION'],
         'CHECK_SSL_VALIDITY': config['CHECK_SSL_VALIDITY'],
-        'CHROME_BINARY': config['CHROME_BINARY'],
+        'CHROME_BINARY': bin_path(config['CHROME_BINARY']),
         'CHROME_HEADLESS': config['CHROME_HEADLESS'],
         'CHROME_SANDBOX': config['CHROME_SANDBOX'],
         'CHROME_USER_AGENT': config['CHROME_USER_AGENT'],
@@ -970,12 +1006,21 @@ globals().update(CONFIG)
 
 
 # Set timezone to UTC and umask to OUTPUT_PERMISSIONS
-os.environ["TZ"] = 'UTC'
+assert TIMEZONE == 'UTC', 'The server timezone should always be set to UTC'  # we may allow this to change later
+os.environ["TZ"] = TIMEZONE
 os.umask(0o777 - int(DIR_OUTPUT_PERMISSIONS, base=8))  # noqa: F821
 
 # add ./node_modules/.bin to $PATH so we can use node scripts in extractors
 NODE_BIN_PATH = str((Path(CONFIG["OUTPUT_DIR"]).absolute() / 'node_modules' / '.bin'))
 sys.path.append(NODE_BIN_PATH)
+
+# OPTIONAL: also look around the host system for node modules to use
+#   avoid enabling this unless absolutely needed,
+#   having overlapping potential sources of libs is a big source of bugs/confusing to users
+# DEV_NODE_BIN_PATH = str((Path(CONFIG["PACKAGE_DIR"]).absolute() / '..' / 'node_modules' / '.bin'))
+# sys.path.append(DEV_NODE_BIN_PATH)
+# USER_NODE_BIN_PATH = str(Path('~/.node_modules/.bin').resolve())
+# sys.path.append(USER_NODE_BIN_PATH)
 
 # disable stderr "you really shouldnt disable ssl" warnings with library config
 if not CONFIG['CHECK_SSL_VALIDITY']:
@@ -984,6 +1029,13 @@ if not CONFIG['CHECK_SSL_VALIDITY']:
     requests.packages.urllib3.disable_warnings(requests.packages.urllib3.exceptions.InsecureRequestWarning)
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+# get SQLite database version, compile options, and runtime options
+# TODO: make this a less hacky proper assertion checker helper function in somewhere like setup_django
+#cursor = sqlite3.connect(':memory:').cursor()
+#DYNAMIC_CONFIG_SCHEMA['SQLITE_VERSION'] = lambda c: cursor.execute("SELECT sqlite_version();").fetchone()[0]
+#DYNAMIC_CONFIG_SCHEMA['SQLITE_JOURNAL_MODE'] = lambda c: cursor.execute('PRAGMA journal_mode;').fetchone()[0]
+#DYNAMIC_CONFIG_SCHEMA['SQLITE_OPTIONS'] = lambda c: [option[0] for option in cursor.execute('PRAGMA compile_options;').fetchall()]
+#cursor.close()
 
 ########################### Config Validity Checkers ###########################
 
@@ -1079,6 +1131,7 @@ def check_dependencies(config: ConfigDict=CONFIG, show_help: bool=True) -> None:
         stderr('    If you want to disable media archiving entirely, set SAVE_MEDIA=False instead:')
         stderr('        https://github.com/ArchiveBox/ArchiveBox/wiki/Configuration#save_media')
         stderr()
+
         
 def check_data_folder(out_dir: Union[str, Path, None]=None, config: ConfigDict=CONFIG) -> None:
     output_dir = out_dir or config['OUTPUT_DIR']
@@ -1153,7 +1206,6 @@ def setup_django(out_dir: Path=None, check_db=False, config: ConfigDict=CONFIG, 
             # Otherwise use default sqlite3 file-based database and initialize django
             # without running migrations automatically (user runs them manually by calling init)
             django.setup()
-            
 
         from django.conf import settings
 
@@ -1168,9 +1220,16 @@ def setup_django(out_dir: Path=None, check_db=False, config: ConfigDict=CONFIG, 
             # Enable WAL mode in sqlite3
             from django.db import connection
             with connection.cursor() as cursor:
+
+                # Set Journal mode to WAL to allow for multiple writers
                 current_mode = cursor.execute("PRAGMA journal_mode")
                 if current_mode != 'wal':
                     cursor.execute("PRAGMA journal_mode=wal;")
+
+                # Set max blocking delay for concurrent writes and write sync mode
+                # https://litestream.io/tips/#busy-timeout
+                cursor.execute("PRAGMA busy_timeout = 5000;")
+                cursor.execute("PRAGMA synchronous = NORMAL;")
 
             # Create cache table in DB if needed
             try:
@@ -1178,7 +1237,6 @@ def setup_django(out_dir: Path=None, check_db=False, config: ConfigDict=CONFIG, 
                 cache.get('test', None)
             except django.db.utils.OperationalError:
                 call_command("createcachetable", verbosity=0)
-
 
             # if archivebox gets imported multiple times, we have to close
             # the sqlite3 whenever we init from scratch to avoid multiple threads
