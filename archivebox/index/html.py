@@ -118,10 +118,10 @@ def render_django_template(template: str, context: Mapping[str, str]) -> str:
 
 
 def snapshot_icons(snapshot) -> str:
-    cache_key = f'{snapshot.id}-{(snapshot.updated or snapshot.added).timestamp()}-snapshot-icons'
+    cache_key = f'{snapshot.pk}-{(snapshot.updated or snapshot.added).timestamp()}-snapshot-icons'
     
     def calc_snapshot_icons():
-        from core.models import EXTRACTORS
+        from core.models import EXTRACTOR_CHOICES
         # start = datetime.now(timezone.utc)
 
         archive_results = snapshot.archiveresult_set.filter(status="succeeded", output__isnull=False)
@@ -143,16 +143,16 @@ def snapshot_icons(snapshot) -> str:
             "mercury": "🅼",
             "warc": "📦"
         }
-        exclude = ["favicon", "title", "headers", "archive_org"]
+        exclude = ["favicon", "title", "headers", "htmltotext", "archive_org"]
         # Missing specific entry for WARC
 
         extractor_outputs = defaultdict(lambda: None)
-        for extractor, _ in EXTRACTORS:
+        for extractor, _ in EXTRACTOR_CHOICES:
             for result in archive_results:
                 if result.extractor == extractor and result:
                     extractor_outputs[extractor] = result
 
-        for extractor, _ in EXTRACTORS:
+        for extractor, _ in EXTRACTOR_CHOICES:
             if extractor not in exclude:
                 existing = extractor_outputs[extractor] and extractor_outputs[extractor].status == 'succeeded' and extractor_outputs[extractor].output
                 # Check filesystsem to see if anything is actually present (too slow, needs optimization/caching)
@@ -177,7 +177,7 @@ def snapshot_icons(snapshot) -> str:
                 # The check for archive_org is different, so it has to be handled separately
 
                 # get from db (faster)
-                exists = extractor_outputs[extractor] and extractor_outputs[extractor].status == 'succeeded' and extractor_outputs[extractor].output
+                exists = extractor in extractor_outputs and extractor_outputs[extractor] and extractor_outputs[extractor].status == 'succeeded' and extractor_outputs[extractor].output
                 # get from filesystem (slower)
                 # target_path = Path(path) / "archive.org.txt"
                 # exists = target_path.exists()

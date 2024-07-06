@@ -22,6 +22,12 @@ from ..config import (
 from ..logging_util import TimedProgress
 from .title import get_html
 
+def get_output_path():
+    return 'readability/'
+
+def get_embed_path(archiveresult=None):
+    return get_output_path() + 'content.html'
+
 
 @enforce_types
 def should_save_readability(link: Link, out_dir: Optional[str]=None, overwrite: Optional[bool]=False) -> bool:
@@ -29,7 +35,7 @@ def should_save_readability(link: Link, out_dir: Optional[str]=None, overwrite: 
         return False
 
     out_dir = out_dir or Path(link.link_dir)
-    if not overwrite and (out_dir / 'readability').exists():
+    if not overwrite and (out_dir / get_output_path()).exists():
         return False
 
     return SAVE_READABILITY
@@ -40,8 +46,8 @@ def save_readability(link: Link, out_dir: Optional[str]=None, timeout: int=TIMEO
     """download reader friendly version using @mozilla/readability"""
 
     out_dir = Path(out_dir or link.link_dir)
-    output_folder = out_dir.absolute() / "readability"
-    output = "readability"
+    output_folder = out_dir.absolute() / get_output_path()
+    output = get_output_path()
 
     # Readability Docs: https://github.com/mozilla/readability
 
@@ -67,13 +73,12 @@ def save_readability(link: Link, out_dir: Optional[str]=None, timeout: int=TIMEO
             temp_doc.name,
             link.url,
         ]
-
         result = run(cmd, cwd=out_dir, timeout=timeout)
         try:
             result_json = json.loads(result.stdout)
-            assert result_json and 'content' in result_json
+            assert result_json and 'content' in result_json, 'Readability output is not valid JSON'
         except json.JSONDecodeError:
-            raise ArchiveError('Readability was not able to archive the page', result.stdout + result.stderr)
+            raise ArchiveError('Readability was not able to archive the page (invalid JSON)', result.stdout + result.stderr)
 
         output_folder.mkdir(exist_ok=True)
         readability_content = result_json.pop("textContent") 
@@ -81,11 +86,9 @@ def save_readability(link: Link, out_dir: Optional[str]=None, timeout: int=TIMEO
         atomic_write(str(output_folder / "content.txt"), readability_content)
         atomic_write(str(output_folder / "article.json"), result_json)
 
-        # parse out number of files downloaded from last line of stderr:
-        #  "Downloaded: 76 files, 4.0M in 1.6s (2.52 MB/s)"
         output_tail = [
             line.strip()
-            for line in (result.stdout + result.stderr).decode().rsplit('\n', 3)[-3:]
+            for line in (result.stdout + result.stderr).decode().rsplit('\n', 5)[-5:]
             if line.strip()
         ]
         hints = (
@@ -95,11 +98,13 @@ def save_readability(link: Link, out_dir: Optional[str]=None, timeout: int=TIMEO
 
         # Check for common failure cases
         if (result.returncode > 0):
-            raise ArchiveError('Readability was not able to archive the page', hints)
+            raise ArchiveError(f'Readability was not able to archive the page (status={result.returncode})', hints)
     except (Exception, OSError) as err:
         status = 'failed'
         output = err
-        cmd = [cmd[0], './{singlefile,dom}.html']
+
+        # prefer Chrome dom output to singlefile because singlefile often contains huge url(data:image/...base64) strings that make the html too long to parse with readability
+        cmd = [cmd[0], './{dom,singlefile}.html']
     finally:
         timer.end()
 

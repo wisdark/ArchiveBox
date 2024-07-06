@@ -30,8 +30,7 @@ def run(cmd, *args, input=None, capture_output=True, timeout=None, check=False, 
 
     if capture_output:
         if ('stdout' in kwargs) or ('stderr' in kwargs):
-            raise ValueError('stdout and stderr arguments may not be used '
-                             'with capture_output.')
+            raise ValueError('stdout and stderr arguments may not be used with capture_output.')
         kwargs['stdout'] = PIPE
         kwargs['stderr'] = PIPE
 
@@ -146,20 +145,24 @@ def get_dir_size(path: Union[str, Path], recursive: bool=True, pattern: Optional
        recursively and limiting to a given filter list
     """
     num_bytes, num_dirs, num_files = 0, 0, 0
-    for entry in os.scandir(path):
-        if (pattern is not None) and (pattern not in entry.path):
-            continue
-        if entry.is_dir(follow_symlinks=False):
-            if not recursive:
+    try:
+        for entry in os.scandir(path):
+            if (pattern is not None) and (pattern not in entry.path):
                 continue
-            num_dirs += 1
-            bytes_inside, dirs_inside, files_inside = get_dir_size(entry.path)
-            num_bytes += bytes_inside
-            num_dirs += dirs_inside
-            num_files += files_inside
-        else:
-            num_bytes += entry.stat(follow_symlinks=False).st_size
-            num_files += 1
+            if entry.is_dir(follow_symlinks=False):
+                if not recursive:
+                    continue
+                num_dirs += 1
+                bytes_inside, dirs_inside, files_inside = get_dir_size(entry.path)
+                num_bytes += bytes_inside
+                num_dirs += dirs_inside
+                num_files += files_inside
+            else:
+                num_bytes += entry.stat(follow_symlinks=False).st_size
+                num_files += 1
+    except OSError:
+        # e.g. FileNameTooLong or other error while trying to read dir
+        pass
     return num_bytes, num_dirs, num_files
 
 
@@ -171,7 +174,7 @@ def dedupe_cron_jobs(cron: CronTab) -> CronTab:
     deduped: Set[Tuple[str, str]] = set()
 
     for job in list(cron):
-        unique_tuple = (str(job.slices), job.command)
+        unique_tuple = (str(job.slices), str(job.command))
         if unique_tuple not in deduped:
             deduped.add(unique_tuple)
         cron.remove(job)
@@ -185,17 +188,19 @@ def dedupe_cron_jobs(cron: CronTab) -> CronTab:
 
 
 class suppress_output(object):
-    '''
+    """
     A context manager for doing a "deep suppression" of stdout and stderr in 
     Python, i.e. will suppress all print, even if the print originates in a 
     compiled C/Fortran sub-function.
-       This will not suppress raised exceptions, since exceptions are printed
+    
+    This will not suppress raised exceptions, since exceptions are printed
     to stderr just before a script exits, and after the context manager has
     exited (at least, I think that is why it lets exceptions through).      
 
     with suppress_stdout_stderr():
         rogue_function()
-    '''
+    """
+    
     def __init__(self, stdout=True, stderr=True):
         # Open a pair of null files
         # Save the actual stdout (1) and stderr (2) file descriptors.

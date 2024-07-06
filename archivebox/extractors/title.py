@@ -10,6 +10,7 @@ from ..util import (
     enforce_types,
     download_url,
     htmldecode,
+    dedupe,
 )
 from ..config import (
     TIMEOUT,
@@ -17,6 +18,7 @@ from ..config import (
     SAVE_TITLE,
     CURL_BINARY,
     CURL_ARGS,
+    CURL_EXTRA_ARGS,
     CURL_VERSION,
     CURL_USER_AGENT,
 )
@@ -26,7 +28,7 @@ from ..logging_util import TimedProgress
 
 HTML_TITLE_REGEX = re.compile(
     r'<title.*?>'                      # start matching text after <title> tag
-    r'(.[^<>]+)',                      # get everything up to these symbols
+    r'([^<>]+)',                      # get everything up to these symbols
     re.IGNORECASE | re.MULTILINE | re.DOTALL | re.UNICODE,
 )
 
@@ -58,6 +60,7 @@ class TitleParser(HTMLParser):
         if tag.lower() == "title":
             self.inside_title_tag = False
 
+
 @enforce_types
 def get_html(link: Link, path: Path, timeout: int=TIMEOUT) -> str:
     """
@@ -66,19 +69,28 @@ def get_html(link: Link, path: Path, timeout: int=TIMEOUT) -> str:
     """
     canonical = link.canonical_outputs()
     abs_path = path.absolute()
-    sources = [canonical["singlefile_path"], canonical["wget_path"], canonical["dom_path"]]
+
+    # prefer chrome-generated DOM dump to singlefile as singlefile output often includes HUGE url(data:image/...base64) strings that crash parsers
+    sources = [canonical["dom_path"], canonical["singlefile_path"], canonical["wget_path"]]
     document = None
     for source in sources:
         try:
             with open(abs_path / source, "r", encoding="utf-8") as f:
                 document = f.read()
                 break
-        except (FileNotFoundError, TypeError):
+        except (FileNotFoundError, TypeError, UnicodeDecodeError):
             continue
     if document is None:
         return download_url(link.url, timeout=timeout)
     else:
         return document
+
+
+def get_output_path():
+    # TODO: actually save title to this file
+    # (currently only saved in ArchiveResult.output as charfield value, not saved to filesystem)
+    return 'title.json'
+
 
 @enforce_types
 def should_save_title(link: Link, out_dir: Optional[str]=None, overwrite: Optional[bool]=False) -> bool:
@@ -100,12 +112,17 @@ def save_title(link: Link, out_dir: Optional[Path]=None, timeout: int=TIMEOUT) -
     from core.models import Snapshot
 
     output: ArchiveOutput = None
-    cmd = [
-        CURL_BINARY,
+    # later options take precedence
+    options = [
         *CURL_ARGS,
+        *CURL_EXTRA_ARGS,
         '--max-time', str(timeout),
         *(['--user-agent', '{}'.format(CURL_USER_AGENT)] if CURL_USER_AGENT else []),
         *([] if CHECK_SSL_VALIDITY else ['--insecure']),
+    ]
+    cmd = [
+        CURL_BINARY,
+        *dedupe(options),
         link.url,
     ]
     status = 'succeeded'

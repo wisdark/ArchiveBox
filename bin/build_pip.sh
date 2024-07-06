@@ -15,17 +15,18 @@ REPO_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && cd .. && p
 if [[ -f "$REPO_DIR/.venv/bin/activate" ]]; then
     source "$REPO_DIR/.venv/bin/activate"
 else
-    echo "[!] Warning: No virtualenv presesnt in $REPO_DIR.venv"
+    echo "[!] Warning: No virtualenv presesnt in $REPO_DIR/.venv, creating one now..."
+    python3 -m venv --system-site-packages --symlinks $REPO_DIR/.venv
 fi
 cd "$REPO_DIR"
 
-
-echo "[*] Cleaning up build dirs"
-cd "$REPO_DIR"
-rm -Rf build dist
+# Generate pdm.lock, requirements.txt, and package-lock.json
+bash ./bin/lock_pkgs.sh
 
 echo "[+] Building sdist, bdist_wheel, and egg_info"
-python3 setup.py \
-    sdist --dist-dir=./pip_dist \
-    bdist_wheel --dist-dir=./pip_dist \
-    egg_info --egg-base=./pip_dist
+rm -Rf build dist
+pdm build
+cp dist/* ./pip_dist/
+
+echo
+echo "[√] Finished. Don't forget to commit the new sdist and wheel files in ./pip_dist/"

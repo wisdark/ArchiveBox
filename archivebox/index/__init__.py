@@ -22,8 +22,8 @@ from ..config import (
     JSON_INDEX_FILENAME,
     OUTPUT_DIR,
     TIMEOUT,
-    URL_BLACKLIST_PTN,
-    URL_WHITELIST_PTN,
+    URL_DENYLIST_PTN,
+    URL_ALLOWLIST_PTN,
     stderr,
     OUTPUT_PERMISSIONS
 )
@@ -142,9 +142,9 @@ def archivable_links(links: Iterable[Link]) -> Iterable[Link]:
             continue
         if scheme(link.url) not in ('http', 'https', 'ftp'):
             continue
-        if URL_BLACKLIST_PTN and URL_BLACKLIST_PTN.search(link.url):
+        if URL_DENYLIST_PTN and URL_DENYLIST_PTN.search(link.url):
             continue
-        if URL_WHITELIST_PTN and (not URL_WHITELIST_PTN.search(link.url)):
+        if URL_ALLOWLIST_PTN and (not URL_ALLOWLIST_PTN.search(link.url)):
             continue
 
         yield link
@@ -250,7 +250,7 @@ def load_main_index(out_dir: Path=OUTPUT_DIR, warn: bool=True) -> List[Link]:
     """parse and load existing index with any new links from import_path merged in"""
     from core.models import Snapshot
     try:
-        return Snapshot.objects.all()
+        return Snapshot.objects.all().only('id')
 
     except (KeyboardInterrupt, SystemExit):
         raise SystemExit(0)
@@ -407,7 +407,7 @@ def snapshot_filter(snapshots: QuerySet, filter_patterns: List[str], filter_type
 
 def get_indexed_folders(snapshots, out_dir: Path=OUTPUT_DIR) -> Dict[str, Optional[Link]]:
     """indexed links without checking archive status or data directory validity"""
-    links = [snapshot.as_link_with_details() for snapshot in snapshots.iterator()]
+    links = (snapshot.as_link() for snapshot in snapshots.iterator())
     return {
         link.link_dir: link
         for link in links
@@ -415,7 +415,7 @@ def get_indexed_folders(snapshots, out_dir: Path=OUTPUT_DIR) -> Dict[str, Option
 
 def get_archived_folders(snapshots, out_dir: Path=OUTPUT_DIR) -> Dict[str, Optional[Link]]:
     """indexed links that are archived with a valid data directory"""
-    links = [snapshot.as_link_with_details() for snapshot in snapshots.iterator()]
+    links = (snapshot.as_link() for snapshot in snapshots.iterator())
     return {
         link.link_dir: link
         for link in filter(is_archived, links)
@@ -423,7 +423,7 @@ def get_archived_folders(snapshots, out_dir: Path=OUTPUT_DIR) -> Dict[str, Optio
 
 def get_unarchived_folders(snapshots, out_dir: Path=OUTPUT_DIR) -> Dict[str, Optional[Link]]:
     """indexed links that are unarchived with no data directory or an empty data directory"""
-    links = [snapshot.as_link_with_details() for snapshot in snapshots.iterator()]
+    links = (snapshot.as_link() for snapshot in snapshots.iterator())
     return {
         link.link_dir: link
         for link in filter(is_unarchived, links)

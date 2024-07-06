@@ -10,6 +10,7 @@ from pathlib import Path
 from django.utils.crypto import get_random_string
 
 from ..config import (
+    CONFIG,
     DEBUG,
     SECRET_KEY,
     ALLOWED_HOSTS,
@@ -18,8 +19,21 @@ from ..config import (
     CUSTOM_TEMPLATES_DIR,
     SQL_INDEX_FILENAME,
     OUTPUT_DIR,
+    ARCHIVE_DIR,
     LOGS_DIR,
+    CACHE_DIR,
     TIMEZONE,
+
+    LDAP,
+    LDAP_SERVER_URI,
+    LDAP_BIND_DN,
+    LDAP_BIND_PASSWORD,
+    LDAP_USER_BASE,
+    LDAP_USER_FILTER,
+    LDAP_USERNAME_ATTR,
+    LDAP_FIRSTNAME_ATTR,
+    LDAP_LASTNAME_ATTR,
+    LDAP_EMAIL_ATTR,
 )
 
 IS_MIGRATING = 'makemigrations' in sys.argv[:3] or 'migrate' in sys.argv[:3]
@@ -34,11 +48,32 @@ WSGI_APPLICATION = 'core.wsgi.application'
 ROOT_URLCONF = 'core.urls'
 
 LOGIN_URL = '/accounts/login/'
-LOGOUT_REDIRECT_URL = '/'
+LOGOUT_REDIRECT_URL = os.environ.get('LOGOUT_REDIRECT_URL', '/')
+
 PASSWORD_RESET_URL = '/accounts/password_reset/'
 APPEND_SLASH = True
 
 DEBUG = DEBUG or ('--debug' in sys.argv)
+
+
+# add plugins folders to system path, and load plugins in installed_apps
+BUILTIN_PLUGINS_DIR = PACKAGE_DIR / 'plugins'
+USER_PLUGINS_DIR = OUTPUT_DIR / 'plugins'
+sys.path.insert(0, str(BUILTIN_PLUGINS_DIR))
+sys.path.insert(0, str(USER_PLUGINS_DIR))
+
+def find_plugins(plugins_dir):
+    return {
+        # plugin_entrypoint.parent.name: import_module(plugin_entrypoint.parent.name).METADATA
+        plugin_entrypoint.parent.name: plugin_entrypoint.parent
+        for plugin_entrypoint in plugins_dir.glob('*/apps.py')
+    }
+
+INSTALLED_PLUGINS = {
+    **find_plugins(BUILTIN_PLUGINS_DIR),
+    **find_plugins(USER_PLUGINS_DIR),
+}
+
 
 INSTALLED_APPS = [
     'django.contrib.auth',
@@ -47,11 +82,26 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'django.contrib.admin',
+    'django_jsonform',
 
+    'signal_webhooks',
+    'abid_utils',
+    'plugantic',
     'core',
+    'api',
+
+    *INSTALLED_PLUGINS.keys(),
+
+    'admin_data_views',
 
     'django_extensions',
 ]
+
+
+# For usage with https://www.jetadmin.io/integrations/django
+# INSTALLED_APPS += ['jet_django']
+# JET_PROJECT = 'archivebox'
+# JET_TOKEN = 'some-api-token-here'
 
 
 MIDDLEWARE = [
@@ -61,13 +111,63 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'core.middleware.ReverseProxyAuthMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'core.middleware.CacheControlMiddleware',
 ]
 
+################################################################################
+### Authentication Settings
+################################################################################
+
 AUTHENTICATION_BACKENDS = [
+    'django.contrib.auth.backends.RemoteUserBackend',
     'django.contrib.auth.backends.ModelBackend',
 ]
+
+if LDAP:
+    try:
+        import ldap
+        from django_auth_ldap.config import LDAPSearch
+
+        global AUTH_LDAP_SERVER_URI
+        global AUTH_LDAP_BIND_DN
+        global AUTH_LDAP_BIND_PASSWORD
+        global AUTH_LDAP_USER_SEARCH
+        global AUTH_LDAP_USER_ATTR_MAP
+
+        AUTH_LDAP_SERVER_URI = LDAP_SERVER_URI
+        AUTH_LDAP_BIND_DN = LDAP_BIND_DN
+        AUTH_LDAP_BIND_PASSWORD = LDAP_BIND_PASSWORD
+
+        assert AUTH_LDAP_SERVER_URI and LDAP_USERNAME_ATTR and LDAP_USER_FILTER, 'LDAP_* config options must all be set if LDAP=True'
+
+        AUTH_LDAP_USER_SEARCH = LDAPSearch(
+            LDAP_USER_BASE,
+            ldap.SCOPE_SUBTREE,
+            '(&(' + LDAP_USERNAME_ATTR + '=%(user)s)' + LDAP_USER_FILTER + ')',
+        )
+
+        AUTH_LDAP_USER_ATTR_MAP = {
+            'username': LDAP_USERNAME_ATTR,
+            'first_name': LDAP_FIRSTNAME_ATTR,
+            'last_name': LDAP_LASTNAME_ATTR,
+            'email': LDAP_EMAIL_ATTR,
+        }
+
+        AUTHENTICATION_BACKENDS = [
+            'django.contrib.auth.backends.ModelBackend',
+            'django_auth_ldap.backend.LDAPBackend',
+        ]
+    except ModuleNotFoundError:
+        sys.stderr.write('[X] Error: Found LDAP=True config but LDAP packages not installed. You may need to run: pip install archivebox[ldap]\n\n')
+        # dont hard exit here. in case the user is just running "archivebox version" or "archivebox help", we still want those to work despite broken ldap
+        # sys.exit(1)
+
+
+################################################################################
+### Debug Settings
+################################################################################
 
 # only enable debug toolbar when in DEBUG mode with --nothreading (it doesnt work in multithreaded mode)
 DEBUG_TOOLBAR = DEBUG and ('--nothreading' in sys.argv) and ('--reload' not in sys.argv)
@@ -103,6 +203,17 @@ if DEBUG_TOOLBAR:
         'djdt_flamegraph.FlamegraphPanel',
     ]
     MIDDLEWARE = [*MIDDLEWARE, 'debug_toolbar.middleware.DebugToolbarMiddleware']
+
+
+# https://github.com/bensi94/Django-Requests-Tracker (improved version of django-debug-toolbar)
+# Must delete archivebox/templates/admin to use because it relies on some things we override
+# visit /__requests_tracker__/ to access
+DEBUG_REQUESTS_TRACKER = False
+if DEBUG_REQUESTS_TRACKER:
+    INSTALLED_APPS += ["requests_tracker"]
+    MIDDLEWARE += ["requests_tracker.middleware.requests_tracker_middleware"]
+    INTERNAL_IPS = ["127.0.0.1", "10.0.2.2", "0.0.0.0", "*"]
+
 
 ################################################################################
 ### Staticfile and Template Settings
@@ -143,6 +254,11 @@ TEMPLATES = [
 ### External Service Settings
 ################################################################################
 
+
+CACHE_DB_FILENAME = 'cache.sqlite3'
+CACHE_DB_PATH = CACHE_DIR / CACHE_DB_FILENAME
+CACHE_DB_TABLE = 'django_cache'
+
 DATABASE_FILE = Path(OUTPUT_DIR) / SQL_INDEX_FILENAME
 DATABASE_NAME = os.environ.get("ARCHIVEBOX_DATABASE_NAME", str(DATABASE_FILE))
 
@@ -156,22 +272,55 @@ DATABASES = {
         },
         'TIME_ZONE': TIMEZONE,
         # DB setup is sometimes modified at runtime by setup_django() in config.py
-    }
+    },
+    # 'cache': {
+    #     'ENGINE': 'django.db.backends.sqlite3',
+    #     'NAME': CACHE_DB_PATH,
+    #     'OPTIONS': {
+    #         'timeout': 60,
+    #         'check_same_thread': False,
+    #     },
+    #     'TIME_ZONE': TIMEZONE,
+    # },
 }
+MIGRATION_MODULES = {'signal_webhooks': None}
 
-CACHE_BACKEND = 'django.core.cache.backends.locmem.LocMemCache'
-# CACHE_BACKEND = 'django.core.cache.backends.db.DatabaseCache'
-# CACHE_BACKEND = 'django.core.cache.backends.dummy.DummyCache'
+# as much as I'd love this to be a UUID or ULID field, it's not supported yet as of Django 5.0
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
 
 CACHES = {
-    'default': {
-        'BACKEND': CACHE_BACKEND,
-        'LOCATION': 'django_cache_default',
-    }
+    'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'},
+    # 'sqlite': {'BACKEND': 'django.core.cache.backends.db.DatabaseCache', 'LOCATION': 'cache'},
+    # 'dummy': {'BACKEND': 'django.core.cache.backends.dummy.DummyCache'},
+    # 'filebased': {"BACKEND": "django.core.cache.backends.filebased.FileBasedCache", "LOCATION": CACHE_DIR / 'cache_filebased'},
 }
 
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 
+
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    },
+    "archive": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+        "OPTIONS": {
+            "base_url": "/archive/",
+            "location": ARCHIVE_DIR,
+        },
+    },
+    # "personas": {
+    #     "BACKEND": "django.core.files.storage.FileSystemStorage",
+    #     "OPTIONS": {
+    #         "base_url": "/personas/",
+    #         "location": PERSONAS_DIR,
+    #     },
+    # },
+}
 
 ################################################################################
 ### Security Settings
@@ -201,7 +350,6 @@ AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
-
 ################################################################################
 ### Shell Settings
 ################################################################################
@@ -220,7 +368,6 @@ if IS_SHELL:
 
 LANGUAGE_CODE = 'en-us'
 USE_I18N = True
-USE_L10N = True
 USE_TZ = True
 DATETIME_FORMAT = 'Y-m-d g:iA'
 SHORT_DATETIME_FORMAT = 'Y-m-d h:iA'
@@ -264,8 +411,8 @@ class NoisyRequestsFilter(logging.Filter):
 if LOGS_DIR.exists():
     ERROR_LOG = (LOGS_DIR / 'errors.log')
 else:
-    # meh too many edge cases here around creating log dir w/ correct permissions
-    # cant be bothered, just trash the log and let them figure it out via stdout/stderr
+    # historically too many edge cases here around creating log dir w/ correct permissions early on
+    # if there's an issue on startup, we trash the log and let user figure it out via stdout/stderr
     ERROR_LOG = tempfile.NamedTemporaryFile().name
 
 LOGGING = {
@@ -300,4 +447,55 @@ LOGGING = {
             'filters': ['noisyrequestsfilter'],
         }
     },
+}
+
+
+# Add default webhook configuration to the User model
+SIGNAL_WEBHOOKS_CUSTOM_MODEL = 'api.models.OutboundWebhook'
+SIGNAL_WEBHOOKS = {
+    "HOOKS": {
+        # ... is a special sigil value that means "use the default autogenerated hooks"
+        "django.contrib.auth.models.User": ...,
+        "core.models.Snapshot": ...,
+        "core.models.ArchiveResult": ...,
+        "core.models.Tag": ...,
+        "api.models.APIToken": ...,
+    },
+}
+
+
+ADMIN_DATA_VIEWS = {
+    "NAME": "Environment",
+    "URLS": [
+        {
+            "route": "config/",
+            "view": "core.views.live_config_list_view",
+            "name": "Configuration",
+            "items": {
+                "route": "<str:key>/",
+                "view": "core.views.live_config_value_view",
+                "name": "config_val",
+            },
+        },
+        {
+            "route": "binaries/",
+            "view": "plugantic.views.binaries_list_view",
+            "name": "Binaries",
+            "items": {
+                "route": "<str:key>/",
+                "view": "plugantic.views.binary_detail_view",
+                "name": "binary",
+            },
+        },
+        {
+            "route": "plugins/",
+            "view": "plugantic.views.plugins_list_view",
+            "name": "Plugins",
+            "items": {
+                "route": "<str:key>/",
+                "view": "plugantic.views.plugin_detail_view",
+                "name": "plugin",
+            },
+        },
+    ],
 }

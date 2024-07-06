@@ -393,7 +393,11 @@ def log_link_archiving_finished(link: "Link", link_dir: str, is_new: bool, stats
     else:
         _LAST_RUN_STATS.succeeded += 1
 
-    size = get_dir_size(link_dir)
+    try:
+        size = get_dir_size(link_dir)
+    except FileNotFoundError:
+        size = (0, None, '0')
+
     end_ts = datetime.now(timezone.utc)
     duration = str(end_ts - start_ts).split('.')[0]
     print('        {black}{} files ({}) in {}s {reset}'.format(size[2], printable_filesize(size[0]), duration, **ANSI))
@@ -409,7 +413,7 @@ def log_archive_method_finished(result: "ArchiveResult"):
     """
     # Prettify CMD string and make it safe to copy-paste by quoting arguments
     quoted_cmd = ' '.join(
-        '"{}"'.format(arg) if ' ' in arg else arg
+        '"{}"'.format(arg) if (' ' in arg) or (':' in arg) else arg
         for arg in result.cmd
     )
 
@@ -428,12 +432,14 @@ def log_archive_method_finished(result: "ArchiveResult"):
                     **ANSI,
                 ),
             ]
+        
+        # import pudb; pudb.set_trace()
 
         # Prettify error output hints string and limit to five lines
         hints = getattr(result.output, 'hints', None) or ()
         if hints:
             if isinstance(hints, (list, tuple, type(_ for _ in ()))):
-                hints = [hint.decode() for hint in hints if isinstance(hint, bytes)]
+                hints = [hint.decode() if isinstance(hint, bytes) else str(hint) for hint in hints]
             else:
                 if isinstance(hints, bytes):
                     hints = hints.decode()
@@ -441,15 +447,21 @@ def log_archive_method_finished(result: "ArchiveResult"):
 
             hints = (
                 '    {}{}{}'.format(ANSI['lightyellow'], line.strip(), ANSI['reset'])
-                for line in hints[:5] if line.strip()
+                for line in list(hints)[:5] if line.strip()
             )
 
+        docker_hints = ()
+        if IN_DOCKER:
+            docker_hints = (
+                '  docker run -it -v $PWD/data:/data archivebox/archivebox /bin/bash',
+            )
 
         # Collect and prefix output lines with indentation
         output_lines = [
             *hint_header,
             *hints,
             '{}Run to see full output:{}'.format(ANSI['lightred'], ANSI['reset']),
+            *docker_hints,
             *(['    cd {};'.format(result.pwd)] if result.pwd else []),
             '    {}'.format(quoted_cmd),
         ]
@@ -517,8 +529,8 @@ def log_shell_welcome_msg():
     from .cli import list_subcommands
 
     print('{green}# ArchiveBox Imports{reset}'.format(**ANSI))
-    print('{green}from core.models import Snapshot, User{reset}'.format(**ANSI))
-    print('{green}from archivebox import *\n    {}{reset}'.format("\n    ".join(list_subcommands().keys()), **ANSI))
+    print('{green}from archivebox.core.models import Snapshot, ArchiveResult, Tag, User{reset}'.format(**ANSI))
+    print('{green}from archivebox.cli import *\n    {}{reset}'.format("\n    ".join(list_subcommands().keys()), **ANSI))
     print()
     print('[i] Welcome to the ArchiveBox Shell!')
     print('    https://github.com/ArchiveBox/ArchiveBox/wiki/Usage#Shell-Usage')
@@ -533,11 +545,27 @@ def log_shell_welcome_msg():
 ### Helpers
 
 @enforce_types
-def pretty_path(path: Union[Path, str]) -> str:
+def pretty_path(path: Union[Path, str], pwd: Union[Path, str]=OUTPUT_DIR) -> str:
     """convert paths like .../ArchiveBox/archivebox/../output/abc into output/abc"""
-    pwd = Path('.').resolve()
-    # parent = os.path.abspath(os.path.join(pwd, os.path.pardir))
-    return str(path).replace(str(pwd) + '/', './')
+    pwd = str(Path(pwd))  # .resolve()
+    path = str(path)
+
+    if not path:
+        return path
+
+    # replace long absolute paths with ./ relative ones to save on terminal output width
+    if path.startswith(pwd) and (pwd != '/'):
+        path = path.replace(pwd, '.', 1)
+    
+    # quote paths containing spaces
+    if ' ' in path:
+        path = f'"{path}"'
+
+    # if path is just a plain dot, replace it back with the absolute path for clarity
+    if path == '.':
+        path = pwd
+
+    return path
 
 
 @enforce_types
@@ -578,6 +606,7 @@ def printable_folder_status(name: str, folder: Dict) -> str:
     else:
         color, symbol, note, num_files = 'lightyellow', '-', 'disabled', '-'
 
+
     if folder['path']:
         if Path(folder['path']).exists():
             num_files = (
@@ -592,13 +621,7 @@ def printable_folder_status(name: str, folder: Dict) -> str:
         # add symbol @ next to filecount if path is a remote filesystem mount
         num_files = f'{num_files} @' if num_files else '@'
 
-    path = str(folder['path']).replace(str(OUTPUT_DIR), '.') if folder['path'] else ''
-    if path and ' ' in path:
-        path = f'"{path}"'
-
-    # if path is just a plain dot, replace it back with the full path for clarity
-    if path == '.':
-        path = str(OUTPUT_DIR)
+    path = pretty_path(folder['path'])
 
     return ' '.join((
         ANSI[color],
@@ -615,23 +638,19 @@ def printable_folder_status(name: str, folder: Dict) -> str:
 
 @enforce_types
 def printable_dependency_version(name: str, dependency: Dict) -> str:
-    version = None
+    color, symbol, note, version = 'red', 'X', 'invalid', '?'
+
     if dependency['enabled']:
         if dependency['is_valid']:
-            color, symbol, note, version = 'green', '√', 'valid', ''
+            color, symbol, note = 'green', '√', 'valid'
 
             parsed_version_num = re.search(r'[\d\.]+', dependency['version'])
             if parsed_version_num:
                 version = f'v{parsed_version_num[0]}'
-
-        if not version:
-            color, symbol, note, version = 'red', 'X', 'invalid', '?'
     else:
         color, symbol, note, version = 'lightyellow', '-', 'disabled', '-'
 
-    path = str(dependency["path"]).replace(str(OUTPUT_DIR), '.') if dependency["path"] else ''
-    if path and ' ' in path:
-        path = f'"{path}"'
+    path = pretty_path(dependency['path'])
 
     return ' '.join((
         ANSI[color],

@@ -5,17 +5,35 @@ __pycache__/
 .mypy_cache/
 .pytest_cache/
 .github/
+.pdm-build/
+.pdm-python
+.eggs/
+.git/
+!.git/HEAD
+!.git/refs/heads/*
 
 venv/
 .venv/
+.venv-old/
 .docker-venv/
+node_modules/
+chrome/
+chromeprofile/
 
+pdm.dev.lock
+pdm.lock
+
+docs/
 build/
 dist/
-pip_dist/
-!pip_dist/archivebox.egg-info/requires.txt
 brew_dist/
+deb_dist/
+pip_dist/
 assets/
+docker/
 
 data/
+data*/
 output/
+index.sqlite3
+index.sqlite3-wal

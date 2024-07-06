@@ -4,6 +4,7 @@ WARNING: THIS FILE IS ALL LEGACY CODE TO BE REMOVED.
 
 DO NOT ADD ANY NEW FEATURES TO THIS FILE, NEW CODE GOES HERE: core/models.py
 
+These are the old types we used to use before ArchiveBox v0.4 (before we switched to Django).
 """
 
 __package__ = 'archivebox.index'
@@ -20,7 +21,7 @@ from django.utils.functional import cached_property
 
 from ..system import get_dir_size
 from ..util import ts_to_date_str, parse_date
-from ..config import OUTPUT_DIR, ARCHIVE_DIR_NAME
+from ..config import OUTPUT_DIR, ARCHIVE_DIR_NAME, FAVICON_PROVIDER
 
 class ArchiveError(Exception):
     def __init__(self, message, hints=None):
@@ -191,6 +192,9 @@ class Link:
         if extended:
             info.update({
                 'snapshot_id': self.snapshot_id,
+                'snapshot_uuid': self.snapshot_uuid,
+                'snapshot_abid': self.snapshot_abid,
+
                 'link_dir': self.link_dir,
                 'archive_path': self.archive_path,
                 
@@ -260,9 +264,21 @@ class Link:
         return to_csv(self, cols=cols or self.field_names(), separator=separator, ljust=ljust)
 
     @cached_property
-    def snapshot_id(self):
+    def snapshot(self):
         from core.models import Snapshot
-        return str(Snapshot.objects.only('id').get(url=self.url).id)
+        return Snapshot.objects.only('uuid').get(url=self.url)
+
+    @cached_property
+    def snapshot_id(self):
+        return str(self.snapshot.pk)
+
+    @cached_property
+    def snapshot_uuid(self):
+        return str(self.snapshot.uuid)
+
+    @cached_property
+    def snapshot_abid(self):
+        return str(self.snapshot.ABID)
 
     @classmethod
     def field_names(cls):
@@ -379,11 +395,15 @@ class Link:
 
         output_paths = (
             domain(self.url),
+            'output.html',
             'output.pdf',
             'screenshot.png',
-            'output.html',
+            'singlefile.html',
+            'readability/content.html',
+            'mercury/content.html',
+            'htmltotext.txt',
             'media',
-            'singlefile.html'
+            'git',
         )
 
         return any(
@@ -423,12 +443,13 @@ class Link:
         canonical = {
             'index_path': 'index.html',
             'favicon_path': 'favicon.ico',
-            'google_favicon_path': 'https://www.google.com/s2/favicons?domain={}'.format(self.domain),
+            'google_favicon_path': FAVICON_PROVIDER.format(self.domain),
             'wget_path': wget_output_path(self),
             'warc_path': 'warc/',
             'singlefile_path': 'singlefile.html',
             'readability_path': 'readability/content.html',
             'mercury_path': 'mercury/content.html',
+            'htmltotext_path': 'htmltotext.txt',
             'pdf_path': 'output.pdf',
             'screenshot_path': 'screenshot.png',
             'dom_path': 'output.html',
@@ -452,6 +473,7 @@ class Link:
                 'singlefile_path': static_path,
                 'readability_path': static_path,
                 'mercury_path': static_path,
+                'htmltotext_path': static_path,
             })
         return canonical
 

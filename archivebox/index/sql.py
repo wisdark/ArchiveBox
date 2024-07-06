@@ -45,7 +45,8 @@ def write_link_to_sql_index(link: Link):
     info.pop('tags')
 
     try:
-        info["timestamp"] = Snapshot.objects.get(url=link.url).timestamp
+        snapshot = Snapshot.objects.get(url=link.url)
+        info["timestamp"] = snapshot.timestamp
     except Snapshot.DoesNotExist:
         while Snapshot.objects.filter(timestamp=info["timestamp"]).exists():
             info["timestamp"] = str(float(info["timestamp"]) + 1.0)
@@ -57,7 +58,7 @@ def write_link_to_sql_index(link: Link):
         for entry in entries:
             if isinstance(entry, dict):
                 result, _ = ArchiveResult.objects.get_or_create(
-                    snapshot_id=snapshot.id,
+                    snapshot_id=snapshot.pk,
                     extractor=extractor,
                     start_ts=parse_date(entry['start_ts']),
                     defaults={
@@ -71,7 +72,7 @@ def write_link_to_sql_index(link: Link):
                 )
             else:
                 result, _ = ArchiveResult.objects.update_or_create(
-                    snapshot_id=snapshot.id,
+                    snapshot_id=snapshot.pk,
                     extractor=extractor,
                     start_ts=parse_date(entry.start_ts),
                     defaults={
@@ -109,11 +110,13 @@ def write_sql_link_details(link: Link, out_dir: Path=OUTPUT_DIR) -> None:
         snap = Snapshot.objects.get(url=link.url)
     except Snapshot.DoesNotExist:
         snap = write_link_to_sql_index(link)
+
     snap.title = link.title
 
-    tag_list = list(dict.fromkeys(
-        tag.strip() for tag in re.split(TAG_SEPARATOR_PATTERN, link.tags or '')
-    ))
+    tag_list = list(
+        {tag.strip() for tag in re.split(TAG_SEPARATOR_PATTERN, link.tags or '')}
+        | set(snap.tags.values_list('name', flat=True))
+    )
 
     snap.save()
     snap.save_tags(tag_list)
@@ -140,7 +143,12 @@ def list_migrations(out_dir: Path=OUTPUT_DIR) -> List[Tuple[bool, str]]:
 def apply_migrations(out_dir: Path=OUTPUT_DIR) -> List[str]:
     from django.core.management import call_command
     null, out = StringIO(), StringIO()
-    call_command("makemigrations", interactive=False, stdout=null)
+    try:
+        call_command("makemigrations", interactive=False, stdout=null)
+    except Exception as e:
+        print('[!] Failed to create some migrations. Please open an issue and copy paste this output for help: {}'.format(e))
+        print()
+    
     call_command("migrate", interactive=False, stdout=out)
     out.seek(0)
 
