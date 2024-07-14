@@ -411,6 +411,7 @@ See <a href="#%EF%B8%8F-cli-usage">below</a> for usage examples using the CLI, W
 <li><a href="https://unraid.net/community/apps?q=archivebox#r">UnRaid</a></li>
 <li><a href="https://github.com/YunoHost-Apps/archivebox_ynh">Yunohost</a></li>
 <li><a href="https://www.cloudron.io/store/io.archivebox.cloudronapp.html">Cloudron</a></li>
+<li><a href="https://docs.saltbox.dev/sandbox/apps/archivebox/">Saltbox</a></li>
 <li><a href="https://github.com/ArchiveBox/ArchiveBox/pull/922/files#diff-00f0606e18b2618c3cc1667ca7c2b703b537af690ca71eba1330633587dcb1ee">AppImage</a></li>
 <li><a href="https://runtipi.io/docs/apps-available#:~:text=for%20AI%20Chats.-,ArchiveBox,Open%20source%20self%2Dhosted%20web%20archiving.,-Atuin%20Server">Runtipi</a></li>
 <li><a href="https://github.com/ArchiveBox/ArchiveBox/issues/986">Umbrel</a> (need contributors...)</li>
@@ -567,7 +568,7 @@ ls ./archive/*/index.html  # or inspect snapshot data directly on the filesystem
 <br/>
 
 <details>
-<summary><b>🖥&nbsp; Web UI Usage</b></summary>
+<summary><b>🖥&nbsp; Web UI & API Usage</b></summary>
 <pre lang="bash"><code style="white-space: pre-line">
 # Start the server on bare metal (pip/apt/brew/etc):
 archivebox manage createsuperuser              # create a new admin user via CLI
@@ -756,8 +757,8 @@ The configuration is documented here: **[Configuration Wiki](https://github.com/
 # e.g. archivebox config --set TIMEOUT=120
 # or   docker compose run archivebox config --set TIMEOUT=120
 <br/>
-TIMEOUT=120                # default: 60    add more seconds on slower networks
-CHECK_SSL_VALIDITY=True    # default: False True = allow saving URLs w/ bad SSL
+TIMEOUT=240                # default: 60    add more seconds on slower networks
+CHECK_SSL_VALIDITY=False   # default: True  False = allow saving URLs w/ bad SSL
 SAVE_ARCHIVE_DOT_ORG=False # default: True  False = disable Archive.org saving
 MAX_MEDIA_SIZE=1500m       # default: 750m  raise/lower youtubedl output size
 <br/>
@@ -776,7 +777,7 @@ CURL_USER_AGENT="Mozilla/5.0 ..."
 
 To achieve high-fidelity archives in as many situations as possible, ArchiveBox depends on a variety of 3rd-party libraries and tools that specialize in extracting different types of content.
 
-> Under-the-hood, ArchiveBox uses [Django](https://www.djangoproject.com/start/overview/) to power its [Web UI](https://github.com/ArchiveBox/ArchiveBox/wiki/Usage#ui-usage) and [SQlite](https://www.sqlite.org/locrsf.html) + the filesystem to provide [fast & durable metadata storage](https://www.sqlite.org/locrsf.html) w/ [determinisitc upgrades](https://stackoverflow.com/a/39976321/2156113).
+> Under-the-hood, ArchiveBox uses [Django](https://www.djangoproject.com/start/overview/) to power its [Web UI](https://github.com/ArchiveBox/ArchiveBox/wiki/Usage#ui-usage), [Django Ninja](https://django-ninja.dev/) for the REST API, and [SQlite](https://www.sqlite.org/locrsf.html) + the filesystem to provide [fast & durable metadata storage](https://www.sqlite.org/locrsf.html) w/ [determinisitc upgrades](https://stackoverflow.com/a/39976321/2156113).
 
 ArchiveBox bundles industry-standard tools like [Google Chrome](https://github.com/ArchiveBox/ArchiveBox/wiki/Chromium-Install), [`wget`, `yt-dlp`, `readability`, etc.](#dependencies) internally, and its operation can be [tuned, secured, and extended](https://github.com/ArchiveBox/ArchiveBox/wiki/Configuration) as-needed for many different applications.
 
@@ -785,7 +786,7 @@ ArchiveBox bundles industry-standard tools like [Google Chrome](https://github.c
 <summary><i>Expand to learn more about ArchiveBox's internals & dependencies...</i></summary><br/>
 
 <blockquote>
-<p><em>TIP: For better security, easier updating, and to avoid polluting your host system with extra dependencies,<strong>it is strongly recommended to use the <a href="https://github.com/ArchiveBox/ArchiveBox/wiki/Docker">⭐️ official Docker image</a></strong> with everything pre-installed for the best experience.</em></p>
+<p><em>TIP: For better security while running ArchiveBox, and to avoid polluting your host system with a bunch of sub-dependencies that you need to keep up-to-date,<strong>it is strongly recommended to use the <a href="https://github.com/ArchiveBox/ArchiveBox/wiki/Docker">⭐️ official Docker image</a></strong> which provides everything in an easy container with simple one-liner upgrades.</em></p>
 </blockquote>
 
 These optional dependencies used for archiving sites include:
