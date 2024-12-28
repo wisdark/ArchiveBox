@@ -58,6 +58,13 @@ groupmod -o -g "${PGID:-$DETECTED_PGID}" "$ARCHIVEBOX_USER" > /dev/null 2>&1
 export PUID="$(id -u archivebox)"
 export PGID="$(id -g archivebox)"
 
+# Check if user attempted to run it in the root of their home folder or hard drive (common mistake)
+if [[ -d "$DATA_DIR/Documents" || -d "$DATA_DIR/.config" || -d "$DATA_DIR/usr" || -f "$DATA_DIR/.bashrc" || -f "$DATA_DIR/.zshrc" ]]; then
+    echo -e "\n[X] ERROR: ArchiveBox was run from inside a home folder"
+    echo -e "      Make sure you are inside an existing collection directory or a new empty directory and try again"
+    exit 3
+fi
+
 # Check the permissions of the data dir (or create if it doesn't exist)
 if [[ -d "$DATA_DIR/archive" ]]; then
     if touch "$DATA_DIR/archive/.permissions_test_safe_to_delete" 2>/dev/null; then
@@ -79,6 +86,13 @@ if [[ -d "$DATA_DIR/archive" ]]; then
 else
     # create data directory (and logs, since its the first dir ArchiveBox needs to write to)
     mkdir -p "$DATA_DIR/logs"
+fi
+
+# check if novnc x11 $DISPLAY is available
+export DISPLAY="${DISPLAY:-"novnc:0.0"}"
+if ! xdpyinfo > /dev/null 2>&1; then
+    # cant connect to x11 display, unset it so that chrome doesn't try to connect to it and hang indefinitely
+    unset DISPLAY
 fi
 
 # force set the ownership of the data dir contents to the archivebox user and group
@@ -103,6 +117,16 @@ if [[ -d "$PLAYWRIGHT_BROWSERS_PATH/.links" ]]; then
     chown -h $PUID:$PGID "$PLAYWRIGHT_BROWSERS_PATH"/.links/*
 fi
 
+# also create and chown tmp dir and lib dir (and their default equivalents inside data/)
+# mkdir -p "$DATA_DIR"/lib/bin
+# chown $PUID:$PGID "$DATA_DIR"/lib "$DATA_DIR"/lib/*
+chown $PUID:$PGID "$LIB_DIR" 2>/dev/null
+chown $PUID:$PGID "$LIB_DIR/*" 2>/dev/null &
+
+# mkdir -p "$DATA_DIR"/tmp/workers
+# chown $PUID:$PGID "$DATA_DIR"/tmp "$DATA_DIR"/tmp/*
+chown $PUID:$PGID "$TMP_DIR" 2>/dev/null
+chown $PUID:$PGID "$TMP_DIR/*" 2>/dev/null &
 
 # (this check is written in blood in 2023, QEMU silently breaks things in ways that are not obvious)
 export IN_QEMU="$(pmap 1 | grep qemu >/dev/null && echo 'True' || echo 'False')"
@@ -165,7 +189,7 @@ else
 fi
 
 # symlink etc crontabs into place
-mkdir -p "$DATA_DIR/crontabs"
+mkdir -p "$DATA_DIR"/crontabs
 if ! test -L /var/spool/cron/crontabs; then
     # move files from old location into new data dir location
     for existing_file in /var/spool/cron/crontabs/*; do
@@ -175,6 +199,7 @@ if ! test -L /var/spool/cron/crontabs; then
     rm -Rf /var/spool/cron/crontabs
     ln -sf "$DATA_DIR/crontabs" /var/spool/cron/crontabs
 fi
+chown -R $PUID "$DATA_DIR"/crontabs
 
 # set DBUS_SYSTEM_BUS_ADDRESS & DBUS_SESSION_BUS_ADDRESS
 # (dbus is not actually needed, it makes chrome log fewer warnings but isn't worth making our docker images bigger)

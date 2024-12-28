@@ -9,16 +9,19 @@ __pycache__/
 .pdm-python
 .eggs/
 .git/
+.vscode/
 !.git/HEAD
 !.git/refs/heads/*
 
 venv/
 .venv/
 .venv-old/
+.docker_venv/
 .docker-venv/
 node_modules/
 chrome/
 chromeprofile/
+chrome_profile/
 
 pdm.dev.lock
 pdm.lock
@@ -31,7 +34,10 @@ deb_dist/
 pip_dist/
 assets/
 docker/
+website/
+typings/
 
+tmp/
 data/
 data*/
 output/

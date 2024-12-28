@@ -3,10 +3,9 @@ __description__ = 'Plain Text'
 
 from typing import IO, Iterable
 from datetime import datetime, timezone
-from pathlib import Path
 
 from ..index.schema import Link
-from ..util import (
+from archivebox.misc.util import (
     htmldecode,
     enforce_types,
     find_all_urls,
@@ -22,19 +21,20 @@ def parse_generic_txt_export(text_file: IO[str], **_kwargs) -> Iterable[Link]:
         if not line.strip():
             continue
 
-        # if the line is a local file path that resolves, then we can archive it
-        try:
-            if Path(line).exists():
-                yield Link(
-                    url=line,
-                    timestamp=str(datetime.now(timezone.utc).timestamp()),
-                    title=None,
-                    tags=None,
-                    sources=[text_file.name],
-                )
-        except (OSError, PermissionError):
-            # nvm, not a valid path...
-            pass
+        # # if the line is a local file path that resolves, then we can archive it
+        # if line.startswith('file://'):    
+        #     try:
+        #         if Path(line).exists():
+        #             yield Link(
+        #                 url=line,
+        #                 timestamp=str(datetime.now(timezone.utc).timestamp()),
+        #                 title=None,
+        #                 tags=None,
+        #                 sources=[text_file.name],
+        #             )
+        #     except (OSError, PermissionError):
+        #         # nvm, not a valid path...
+        #         pass
 
         # otherwise look for anything that looks like a URL in the line
         for url in find_all_urls(line):

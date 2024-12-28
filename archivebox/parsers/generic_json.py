@@ -6,7 +6,7 @@ from typing import IO, Iterable
 from datetime import datetime, timezone
 
 from ..index.schema import Link
-from ..util import (
+from archivebox.misc.util import (
     htmldecode,
     enforce_types,
 )
@@ -26,7 +26,7 @@ def jsonObjectToLink(link: str, source: str):
     ts_str = str(datetime.now(timezone.utc).timestamp())
     if link.get('timestamp'):
         # chrome/ff histories use a very precise timestamp
-        ts_str = str(link['timestamp'] / 10000000)
+        ts_str = str(link['timestamp'] / 1000000)
     elif link.get('time'):
         ts_str = str(json_date(link['time'].split(',', 1)[0]).timestamp())
     elif link.get('created_at'):

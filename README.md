@@ -13,7 +13,7 @@
 <a href="https://github.com/ArchiveBox/ArchiveBox/blob/dev/LICENSE"><img src="https://img.shields.io/badge/Open_source-MIT-green.svg?logo=git&logoColor=green"/></a> <a href="https://github.com/ArchiveBox/ArchiveBox/commits/dev"><img src="https://img.shields.io/github/last-commit/ArchiveBox/ArchiveBox.svg?logo=Sublime+Text&logoColor=green&label=Active"/></a> &nbsp; <a href="https://github.com/ArchiveBox/ArchiveBox"><img src="https://img.shields.io/github/stars/ArchiveBox/ArchiveBox.svg?logo=github&label=Stars&logoColor=blue"/></a> &nbsp; <a href="https://hub.docker.com/r/archivebox/archivebox"><img src="https://img.shields.io/docker/pulls/archivebox/archivebox.svg?label=Docker+Pulls"/></a> <a href="https://pypi.org/project/archivebox/"><img src="https://img.shields.io/pypi/dm/archivebox?label=PyPI%20Installs&color=%235f7dae"/></a> <a href="https://chromewebstore.google.com/detail/archivebox-exporter/habonpimjphpdnmcfkaockjnffodikoj"><img src="https://img.shields.io/chrome-web-store/users/habonpimjphpdnmcfkaockjnffodikoj?label=Chrome%20Store&color=%231973e8"/></a>
 
 <!--<pre lang="bash" align="left"><code style="white-space: pre-line; text-align: left" align="left">
-curl -fsSL 'https://get.archivebox.io' | sh    # (or see pip/brew/Docker instructions below)
+curl -fsSL 'https://get.archivebox.io' | bash    # (or see pip/brew/Docker instructions below)
 </code></pre>-->
 
 </div>
@@ -22,12 +22,12 @@ curl -fsSL 'https://get.archivebox.io' | sh    # (or see pip/brew/Docker instruc
 
 **ArchiveBox is a powerful, self-hosted internet archiving solution to collect, save, and view websites offline.**
 
-Without active preservation effort, everything on the internet eventually dissapears or degrades. Archive.org does a great job as a centralized service, but saved URLs have to be public, and they can't save every type of content.
+Without active preservation effort, everything on the internet eventually disappears or degrades. Archive.org does a great job as a centralized service, but saved URLs have to be public, and they can't save every type of content.
 
 *ArchiveBox is an open source tool that lets organizations & individuals archive both public & private web content while retaining control over their data. It can be used to save copies of bookmarks, preserve evidence for legal cases, backup photos from FB/Insta/Flickr or media from YT/Soundcloud/etc., save research papers, and more...*
 <br/>
 
-> ➡️ Get ArchiveBox with `pip install archivebox` on [Linux](#quickstart), [macOS](#quickstart), and [Windows](#quickstart) (WSL2), or via **[Docker](#quickstart)** ⭐️.  
+> ➡️ Get ArchiveBox with `pip install archivebox` on [Linux](#quickstart)/[macOS](#quickstart), or via **[Docker](#quickstart)** ⭐️ on any OS.  
 
 *Once installed, it can be used as a [CLI tool](#usage), [self-hosted Web App](https://github.com/ArchiveBox/ArchiveBox/wiki/Publishing-Your-Archive), [Python library](https://github.com/ArchiveBox/ArchiveBox/wiki/Usage#python-shell-usage), or [one-off command](#static-archive-exporting).*
 
@@ -99,7 +99,7 @@ archivebox init --setup
 <br/>
 <br/>
 # Option D: Or use the optional auto setup script to install it
-curl -fsSL 'https://get.archivebox.io' | sh
+curl -fsSL 'https://get.archivebox.io' | bash
 </code></pre>
 <br/>
 <sub>Open <a href="http://localhost:8000"><code>http://localhost:8000</code></a> to see your server's Web UI ➡️</sub>
@@ -130,7 +130,7 @@ curl -fsSL 'https://get.archivebox.io' | sh
 - [**Extracts a wide variety of content out-of-the-box**](https://github.com/ArchiveBox/ArchiveBox/issues/51): [media (yt-dlp), articles (readability), code (git), etc.](#output-formats)
 - [**Supports scheduled/realtime importing**](https://github.com/ArchiveBox/ArchiveBox/wiki/Scheduled-Archiving) from [many types of sources](#input-formats)
 - [**Uses standard, durable, long-term formats**](#output-formats) like HTML, JSON, PDF, PNG, MP4, TXT, and WARC
-- [**Usable as a oneshot CLI**](https://github.com/ArchiveBox/ArchiveBox/wiki/Usage#CLI-Usage), [**self-hosted web UI**](https://github.com/ArchiveBox/ArchiveBox/wiki/Usage#UI-Usage), [Python API](https://docs.archivebox.io/en/latest/modules.html) (BETA), [REST API](https://github.com/ArchiveBox/ArchiveBox/issues/496) (ALPHA), or [desktop app](https://github.com/ArchiveBox/electron-archivebox)
+- [**Usable as a oneshot CLI**](https://github.com/ArchiveBox/ArchiveBox/wiki/Usage#CLI-Usage), [**self-hosted web UI**](https://github.com/ArchiveBox/ArchiveBox/wiki/Usage#UI-Usage), [Python API](https://docs.archivebox.io/en/dev/apidocs/archivebox/archivebox.html) (BETA), [REST API](https://github.com/ArchiveBox/ArchiveBox/issues/496) (ALPHA), or [desktop app](https://github.com/ArchiveBox/electron-archivebox)
 - [**Saves all pages to archive.org as well**](https://github.com/ArchiveBox/ArchiveBox/wiki/Configuration#save_archive_dot_org) by default for redundancy (can be [disabled](https://github.com/ArchiveBox/ArchiveBox/wiki/Security-Overview#stealth-mode) for local-only mode)
 - Advanced users: support for archiving [content requiring login/paywall/cookies](https://github.com/ArchiveBox/ArchiveBox/wiki/Configuration#chrome_user_data_dir) (see wiki security caveats!)
 - Planned: support for running [JS during archiving](https://github.com/ArchiveBox/ArchiveBox/issues/51) to adblock, [autoscroll](https://github.com/ArchiveBox/ArchiveBox/issues/80), [modal-hide](https://github.com/ArchiveBox/ArchiveBox/issues/175), [thread-expand](https://github.com/ArchiveBox/ArchiveBox/issues/345)
@@ -154,7 +154,7 @@ ArchiveBox is free for everyone to self-host, but we also provide support, secur
 
 > ***[Contact us](https://zulip.archivebox.io/#narrow/stream/167-enterprise/topic/welcome/near/1191102)** if your org wants help using ArchiveBox professionally.*  (we are also seeking [grant funding](https://github.com/ArchiveBox/ArchiveBox/issues/1126#issuecomment-1487431394))  
 > We offer: setup & support, CAPTCHA/ratelimit unblocking, SSO, audit logging/chain-of-custody, and more  
-> *ArchiveBox has 🏛️ 501(c)(3) [nonprofit status](https://hackclub.com/hcb/) and all our work supports open-source development.* 
+> *ArchiveBox is a 🏛️ 501(c)(3) [nonprofit FSP](https://hackclub.com/hcb/) and all our work supports open-source development.* 
 
 <br/>
 
@@ -233,7 +233,7 @@ See <a href="#%EF%B8%8F-cli-usage">below</a> for more usage examples using the C
 <ol>
 <li>Install <a href="https://docs.docker.com/get-docker/">Docker</a> on your system (optional, highly recommended but not required).</li>
 <li>Run the automatic setup script.
-<pre lang="bash"><code style="white-space: pre-line">curl -fsSL 'https://get.archivebox.io' | sh</code></pre>
+<pre lang="bash"><code style="white-space: pre-line">curl -fsSL 'https://get.archivebox.io' | bash</code></pre>
 <i>For more info, see <a href="https://github.com/ArchiveBox/ArchiveBox/wiki/Install#option-b-automatic-setup-script">Install: Bare Metal</a> in the Wiki. ➡️</i>
 </li>
 </ol>
@@ -257,7 +257,7 @@ See <a href="https://docs.sweeting.me/s/against-curl-sh">"Against curl | sh as a
 <ol>
 
 <li>Install <a href="https://realpython.com/installing-python/">Python >= v3.10</a> and <a href="https://nodejs.org/en/download/package-manager/">Node >= v18</a> on your system (if not already installed).</li>
-<li>Install the ArchiveBox package using <code>pip3</code> (or <a href="https://pipx.pypa.io"><code>pipx</code></a>).
+<li>Install the ArchiveBox package using <code>pip3</code> (or <a href="https://docs.astral.sh/uv/guides/tools/#running-tools"><code>uvx</code></a>).
 <pre lang="bash"><code style="white-space: pre-line">pip3 install --upgrade archivebox yt-dlp playwright
 playwright install --with-deps chromium
 archivebox version
@@ -291,7 +291,8 @@ See <a href="#%EF%B8%8F-cli-usage">below</a> for more usage examples using the C
 <details>
 <summary><b><img src="https://user-images.githubusercontent.com/511499/117448075-49597580-af0c-11eb-91ba-f34fff10096b.png" alt="aptitude" height="28px" align="top"/> <code>apt</code></b> (Ubuntu/Debian/etc.)</summary>
 <br/>
-<ol>
+See the <a href="https://github.com/ArchiveBox/ArchiveBox/wiki/Install#option-c-bare-metal-setup">Install: Bare Metal</a> Wiki for instructions. ➡️
+<!--<ol>
 <li>Add the ArchiveBox repository to your sources.<br/>
 <pre lang="bash"><code style="white-space: pre-line">echo "deb http://ppa.launchpad.net/archivebox/archivebox/ubuntu focal main" | sudo tee /etc/apt/sources.list.d/archivebox.list
 sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys C258F79DCC02E369
@@ -310,7 +311,7 @@ archivebox version                         # make sure all dependencies are inst
 <pre lang="bash"><code style="white-space: pre-line">mkdir -p ~/archivebox/data && cd ~/archivebox/data
 archivebox init --setup
 </code></pre>
-<i>Note: If you encounter issues or want more granular instructions, see the <a href="https://github.com/ArchiveBox/ArchiveBox/wiki/Install#option-c-bare-metal-setup">Install: Bare Metal</a> Wiki.</i><br/><br/>
+<br/>
 </li>
 <li>Optional: Start the server then login to the Web UI <a href="http://127.0.0.1:8000">http://127.0.0.1:8000</a> ⇢ Admin.
 <pre lang="bash"><code style="white-space: pre-line">archivebox server 0.0.0.0:8000
@@ -320,9 +321,8 @@ archivebox help
 </code></pre>
 </li>
 </ol>
-
 See <a href="#%EF%B8%8F-cli-usage">below</a> for more usage examples using the CLI, Web UI, or filesystem/SQL/Python to manage your archive.<br/>
-<sub>See the <a href="https://github.com/ArchiveBox/debian-archivebox"><code>debian-archivebox</code></a> repo for more details about this distribution.</sub>
+<sub>See the <a href="https://github.com/ArchiveBox/debian-archivebox"><code>debian-archivebox</code></a> repo for more details about this distribution.</sub>-->
 <br/><br/>
 </details>
 
@@ -368,7 +368,7 @@ See <a href="#%EF%B8%8F-cli-usage">below</a> for more usage examples using the C
 
 <ul>
 <li>Arch: <a href="https://aur.archlinux.org/packages/archivebox/"><code>yay -S archivebox</code></a> (contributed by <a href="https://github.com/imlonghao"><code>@imlonghao</code></a>)</li>
-<li>FreeBSD: <a href="https://github.com/ArchiveBox/ArchiveBox#%EF%B8%8F-easy-setup"><code>curl -fsSL 'https://get.archivebox.io' | sh</code></a> (uses <code>pkg</code> + <code>pip3</code> under-the-hood)</li>
+<li>FreeBSD: <a href="https://github.com/ArchiveBox/ArchiveBox#%EF%B8%8F-easy-setup"><code>curl -fsSL 'https://get.archivebox.io' | bash</code></a> (uses <code>pkg</code> + <code>pip3</code> under-the-hood)</li>
 <li>Nix: <a href="https://github.com/NixOS/nixpkgs/blob/master/pkgs/applications/misc/archivebox/default.nix"><code>nix-env --install archivebox</code></a> (contributed by <a href="https://github.com/siraben"><code>@siraben</code></a>)</li>
 <li>Guix: <a href="https://packages.guix.gnu.org/packages/archivebox/"><code>guix install archivebox</code></a> (contributed by <a href="https://github.com/rakino"><code>@rakino</code></a>)</li>
 <li>More: <a href="https://github.com/ArchiveBox/ArchiveBox/issues/new"><i>contribute another distribution...!</i></a></li>
@@ -407,11 +407,12 @@ See <a href="#%EF%B8%8F-cli-usage">below</a> for usage examples using the CLI, W
 > *Warning: These are contributed by external volunteers and may lag behind the official `pip` channel.*
 
 <ul>
-<li>TrueNAS: <a href="https://truecharts.org/charts/stable/archivebox/">Official ArchiveBox TrueChart</a> / <a href="https://dev.to/finloop/setting-up-archivebox-on-truenas-scale-1788">Custom App Guide</a></li>
+<li><s>TrueNAS: <a href="https://truecharts.org/charts/stable/archivebox/">Official ArchiveBox TrueChart</a> / <a href="https://dev.to/finloop/setting-up-archivebox-on-truenas-scale-1788">Custom App Guide</a></s> (<a href="https://truecharts.org/news/scale-deprecation/">TrueCharts is discontinued</a>, wait for <a href="https://forums.truenas.com/t/the-future-of-electric-eel-and-apps/5409/">Electric Eel</a>)</li>
 <li><a href="https://unraid.net/community/apps?q=archivebox#r">UnRaid</a></li>
 <li><a href="https://github.com/YunoHost-Apps/archivebox_ynh">Yunohost</a></li>
 <li><a href="https://www.cloudron.io/store/io.archivebox.cloudronapp.html">Cloudron</a></li>
 <li><a href="https://docs.saltbox.dev/sandbox/apps/archivebox/">Saltbox</a></li>
+<li><a href="https://portainer-templates.as93.net/archivebox">Portainer</a></li>
 <li><a href="https://github.com/ArchiveBox/ArchiveBox/pull/922/files#diff-00f0606e18b2618c3cc1667ca7c2b703b537af690ca71eba1330633587dcb1ee">AppImage</a></li>
 <li><a href="https://runtipi.io/docs/apps-available#:~:text=for%20AI%20Chats.-,ArchiveBox,Open%20source%20self%2Dhosted%20web%20archiving.,-Atuin%20Server">Runtipi</a></li>
 <li><a href="https://github.com/ArchiveBox/ArchiveBox/issues/986">Umbrel</a> (need contributors...)</li>
@@ -777,7 +778,7 @@ CURL_USER_AGENT="Mozilla/5.0 ..."
 
 To achieve high-fidelity archives in as many situations as possible, ArchiveBox depends on a variety of 3rd-party libraries and tools that specialize in extracting different types of content.
 
-> Under-the-hood, ArchiveBox uses [Django](https://www.djangoproject.com/start/overview/) to power its [Web UI](https://github.com/ArchiveBox/ArchiveBox/wiki/Usage#ui-usage), [Django Ninja](https://django-ninja.dev/) for the REST API, and [SQlite](https://www.sqlite.org/locrsf.html) + the filesystem to provide [fast & durable metadata storage](https://www.sqlite.org/locrsf.html) w/ [determinisitc upgrades](https://stackoverflow.com/a/39976321/2156113).
+> Under-the-hood, ArchiveBox uses [Django](https://www.djangoproject.com/start/overview/) to power its [Web UI](https://github.com/ArchiveBox/ArchiveBox/wiki/Usage#ui-usage), [Django Ninja](https://django-ninja.dev/) for the REST API, and [SQlite](https://www.sqlite.org/locrsf.html) + the filesystem to provide [fast & durable metadata storage](https://www.sqlite.org/locrsf.html) w/ [deterministic upgrades](https://stackoverflow.com/a/39976321/2156113).
 
 ArchiveBox bundles industry-standard tools like [Google Chrome](https://github.com/ArchiveBox/ArchiveBox/wiki/Chromium-Install), [`wget`, `yt-dlp`, `readability`, etc.](#dependencies) internally, and its operation can be [tuned, secured, and extended](https://github.com/ArchiveBox/ArchiveBox/wiki/Configuration) as-needed for many different applications.
 
@@ -789,7 +790,19 @@ ArchiveBox bundles industry-standard tools like [Google Chrome](https://github.c
 <p><em>TIP: For better security while running ArchiveBox, and to avoid polluting your host system with a bunch of sub-dependencies that you need to keep up-to-date,<strong>it is strongly recommended to use the <a href="https://github.com/ArchiveBox/ArchiveBox/wiki/Docker">⭐️ official Docker image</a></strong> which provides everything in an easy container with simple one-liner upgrades.</em></p>
 </blockquote>
 
-These optional dependencies used for archiving sites include:
+<ul>
+<li>Language: Python <code>&gt;=3.10</code></li>
+<li>Backend: <a href="https://www.djangoproject.com/">Django</a> + <a href="https://django-ninja.dev/">Django-Ninja</a> for REST API</li>
+<li>Frontend: <a href="https://docs.djangoproject.com/en/5.1/ref/contrib/admin/">Django Admin</a> + Vanilla HTML, CSS, JS</li>
+<li>Web Server: <a href="https://www.djangoproject.com/">Django</a> + <a href="https://channels.readthedocs.io/en/latest/"><code>channels</code></a> + <a href="https://github.com/django/daphne/"><code>daphne]</code></a></li>
+<li>Database: <a href="https://docs.djangoproject.com/en/5.1/ref/databases/#sqlite-notes">Django ORM</a> saving to <a href="https://www.sqlite.org/mostdeployed.html">SQLite3</a> <code>./data/index.sqlite</code></li>
+<li>Job Queue: <a href="https://huey.readthedocs.io/">Huey</a> using <code>./data/queue.sqlite3</code> under <code>supervisord</code></li>
+<li>Build/test/lint: <a href="https://github.com/pdm-project/pdm"><code>pdm</code></a> / <code>mypy</code>+<code>pyright</code>+<code>pytest</code> / <code>ruff</code></li>
+<li>Subdependencies: <a href="https://github.com/ArchiveBox/abx-pkg"><code>abx-pkg</code></a> installs apt/brew/pip/npm pkgs at runtime (e.g. <code>yt-dlp</code>, <code>singlefile</code>, <code>readability</code>, <code>git</code>)</li>
+</ul>
+
+
+These optional subdependencies used for archiving sites include:
 
 <img src="https://github.com/ArchiveBox/ArchiveBox/assets/511499/62a02155-05d7-4f3e-8de5-75a50a145c4f" alt="archivebox --version CLI output screenshot showing dependencies installed" width="330px" align="right" style="max-width: 100%;">
 
@@ -1306,8 +1319,8 @@ We use the [ArchiveBox GitHub Wiki](https://github.com/ArchiveBox/ArchiveBox/wik
 ## Developers
 
 - [Developer Documentation](https://github.com/ArchiveBox/ArchiveBox#archivebox-development)
-- [Python API](https://docs.archivebox.io/en/latest/modules.html) (alpha)
-- [REST API](https://github.com/ArchiveBox/ArchiveBox/issues/496) (alpha)
+- [Python API](https://docs.archivebox.io/)
+- [REST API](https://demo.archivebox.io/api) (alpha)
 
 ## More Info
 
@@ -1334,6 +1347,11 @@ For low hanging fruit / easy first tickets, see: <a href="https://github.com/Arc
 
 **Python API Documentation:** https://docs.archivebox.io/en/dev/archivebox.html#module-archivebox.main
 
+**Internal Architecture Diagrams:** https://github.com/ArchiveBox/ArchiveBox/wiki/ArchiveBox-Architecture-Diagrams
+
+<img width="100%" alt="architecture diagrams" src="https://github.com/user-attachments/assets/bdf782d5-2c8f-4168-845d-6794ff5cbfec">
+
+
 ### Setup the dev environment
 
 <details><summary><i>Click to expand...</i></summary>
@@ -1352,18 +1370,18 @@ git pull --recurse-submodules
 
 ```bash
 # Install ArchiveBox + python dependencies
-python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[dev]'
-# or: pipenv install --dev && pipenv shell
+pip install uv
+./bin/lock_pkgs.sh         # (aka `uv venv; uv sync;` + generate requirements.txt)
 
-# Install node dependencies
-npm install
-# or
-archivebox setup
+# Install ArchiveBox runtime dependencies
+mkdir -p data && cd data
+archivebox install         # on >=v0.8.5 (otherwise `archivebox setup`)
 
-# Check to see if anything is missing
-archivebox --version
-# install any missing dependencies manually, or use the helper script:
-./bin/setup.sh
+# Run the development server w/ autoreloading (but no bg workers)
+archivebox manage runserver --debug --reload 0.0.0.0:8000
+
+# Run the production server (with bg workers but no autoreloading)
+archivebox server 0.0.0.0:8000
 ```
 
 #### 2. Option B: Build the docker container and use that for development instead
@@ -1372,14 +1390,15 @@ archivebox --version
 # Optional: develop via docker by mounting the code dir into the container
 # if you edit e.g. ./archivebox/core/models.py on the docker host, runserver
 # inside the container will reload and pick up your changes
-docker build . -t archivebox
-docker run -it \
-    -v $PWD/data:/data \
-    archivebox init --setup
-docker run -it -p 8000:8000 \
-    -v $PWD/data:/data \
-    -v $PWD/archivebox:/app/archivebox \
-    archivebox server 0.0.0.0:8000 --debug --reload
+./bin/build_docker.sh dev
+
+docker run -it -v $PWD/data:/data archivebox/archivebox:dev init --setup
+
+# Run the development server w/ autoreloading (but no bg workers)
+docker run -it -v $PWD/data:/data -v $PWD/archivebox:/app/archivebox -p 8000:8000 archivebox/archivebox:dev manage runserver 0.0.0.0:8000 --debug --reload
+
+# Run the production server (with bg workers but no autoreloading)
+docker run -it -v $PWD/data:/data -v $PWD/archivebox:/app/archivebox -p 8000:8000 archivebox/archivebox:dev server
 
 # (remove the --reload flag and add the --nothreading flag when profiling with the django debug toolbar)
 # When using --reload, make sure any files you create can be read by the user in the Docker container, eg with 'chmod a+rX'.
@@ -1397,9 +1416,15 @@ You can also run all these in Docker. For more examples see the GitHub Actions C
 <details><summary><i>Click to expand...</i></summary>
 
 ```bash
+# set up persistent DEBUG=True for all runs
 archivebox config --set DEBUG=True
+
+# OR you can run a dev server with DEBUG=True in a few ways:
+archivebox manage runserver --debug --reload 0.0.0.0:8000
 # or
-archivebox server --debug ...
+archivebox server --debug 0.0.0.0:8000
+# or
+env DEBUG=True daphne -b 0.0.0.0 -p 8000 archivebox.core.asgi:application
 ```
 
 https://stackoverflow.com/questions/1074212/how-can-i-see-the-raw-sql-queries-django-is-running
@@ -1434,12 +1459,12 @@ services:
 
 # or with plain Docker:
 docker build -t archivebox:dev https://github.com/ArchiveBox/ArchiveBox.git#dev
-docker run -it -v $PWD:/data archivebox:dev init --setup
+docker run -it -v $PWD:/data archivebox:dev init
 
 # or with pip:
 pip install 'git+https://github.com/pirate/ArchiveBox@dev'
 npm install 'git+https://github.com/ArchiveBox/ArchiveBox.git#dev'
-archivebox init --setup
+archivebox install
 ```
 
 </details>
@@ -1533,6 +1558,9 @@ Extractors take the URL of a page to archive, write their output to the filesyst
 
 **The process to contribute a new extractor is like this:**
 
+> [!IMPORTANT]
+> This process is getting much easier after v0.8.x, there is a new plugin system under development: https://github.com/ArchiveBox/ArchiveBox/releases/tag/v0.8.4-rc
+
 1. [Open an issue](https://github.com/ArchiveBox/ArchiveBox/issues/new?assignees=&labels=changes%3A+behavior%2Cstatus%3A+idea+phase&template=feature_request.md&title=Feature+Request%3A+...) with your propsoed implementation (please link to the pages of any new external dependencies you plan on using)
 2. Ensure any dependencies needed are easily installable via a package managers like `apt`, `brew`, `pip3`, `npm`
    (Ideally, prefer to use external programs available via `pip3` or `npm`, however we do support using any binary installable via package manager that exposes a CLI/Python API and writes output to stdout or the filesystem.)
@@ -1561,8 +1589,6 @@ Extractors take the URL of a page to archive, write their output to the filesyst
 # or individually:
 ./bin/build_docs.sh
 ./bin/build_pip.sh
-./bin/build_deb.sh
-./bin/build_brew.sh
 ./bin/build_docker.sh
 ```
 
@@ -1579,8 +1605,6 @@ Extractors take the URL of a page to archive, write their output to the filesyst
 # or individually:
 ./bin/release_docs.sh
 ./bin/release_pip.sh
-./bin/release_deb.sh
-./bin/release_brew.sh
 ./bin/release_docker.sh
 ```
 
@@ -1609,12 +1633,11 @@ Extractors take the URL of a page to archive, write their output to the filesyst
 <a href="https://paypal.me/NicholasSweeting"><img src="https://img.shields.io/badge/Paypal-%23FFD141.svg"/></a> &nbsp;
 <a href="https://github.com/ArchiveBox/ArchiveBox/wiki/Donations"><img src="https://img.shields.io/badge/BTC%5CETH-%231a1a1a.svg"/></a>
 <br/>
-<sup><i>ArchiveBox operates as a US 501(c)(3) nonprofit (sponsored by <a href="https://hackclub.com/hcb?ref=donation">HCB</a>), <a href="https://hcb.hackclub.com/donations/start/archivebox">direct donations</a> are tax-deductible.</i></sup>
+<sup><i>ArchiveBox operates as a US 501(c)(3) nonprofit <a href="https://en.wikipedia.org/wiki/Fiscal_sponsorship">FSP</a> (sponsored by <a href="https://hackclub.com/hcb?ref=donation">HCB</a>), <a href="https://hcb.hackclub.com/donations/start/archivebox">direct donations</a> are tax-deductible.</i></sup>
 <br/><br/>
 <a href="https://twitter.com/ArchiveBoxApp"><img src="https://img.shields.io/badge/Tweet-%40ArchiveBoxApp-blue.svg?style=flat"/></a>&nbsp;
 <a href="https://github.com/ArchiveBox/ArchiveBox"><img src="https://img.shields.io/github/stars/ArchiveBox/ArchiveBox.svg?style=flat&label=Star+on+Github"/></a>&nbsp;
-<a href="https://zulip.archivebox.io/"><img src="https://img.shields.io/badge/Join_Our_Community-Zulip_Forum-%23B7EDFE.svg"/></a><br/>
-<sup>ArchiveBox was started by <a href="https://docs.sweeting.me/s/blog#About">Nick Sweeting</a> in 2017, and has <a href="https://star-history.com/#archivebox/archivebox&Date">grown steadily</a> with help from our <a href="https://github.com/ArchiveBox/ArchiveBox/graphs/contributors">amazing contributors</a>.</sup>
+<a href="https://zulip.archivebox.io/"><img src="https://img.shields.io/badge/Join_Our_Community-Zulip_Forum-%23B7EDFE.svg"/></a><br/><br/>
 <hr/>
 <i>✨ Have spare CPU/disk/bandwidth after all your 网站存档爬 and want to help the world?<br/>Check out our <a href="https://github.com/ArchiveBox/good-karma-kit">Good Karma Kit</a>...</i>
 </div>

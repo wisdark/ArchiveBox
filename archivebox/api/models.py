@@ -1,6 +1,5 @@
 __package__ = 'archivebox.api'
 
-import uuid
 import secrets
 from datetime import timedelta
 
@@ -12,7 +11,8 @@ from signal_webhooks.models import WebhookBase
 
 from django_stubs_ext.db.models import TypedModelMeta
 
-from abid_utils.models import ABIDModel, ABIDField
+from archivebox.base_models.models import ABIDModel, ABIDField, AutoDateTimeField
+
 
 
 def generate_secret_token() -> str:
@@ -26,21 +26,21 @@ class APIToken(ABIDModel):
     """
     # ABID: apt_<created_ts>_<token_hash>_<user_id_hash>_<uuid_rand>
     abid_prefix = 'apt_'
-    abid_ts_src = 'self.created'
-    abid_uri_src = 'self.token'
-    abid_subtype_src = 'self.user_id'
+    abid_ts_src = 'self.created_at'
+    abid_uri_src = 'self.created_by_id'
+    abid_subtype_src = '"01"'
     abid_rand_src = 'self.id'
+    abid_drift_allowed = True
 
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=True)
-    uuid = models.UUIDField(blank=True, null=True, editable=True, unique=True)
+    id = models.UUIDField(primary_key=True, default=None, null=False, editable=False, unique=True, verbose_name='ID')
     abid = ABIDField(prefix=abid_prefix)
 
-    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, default=None, null=False)
+    created_at = AutoDateTimeField(default=None, null=False, db_index=True)
+    modified_at = models.DateTimeField(auto_now=True)
+
     token = models.CharField(max_length=32, default=generate_secret_token, unique=True)
-    
-    created = models.DateTimeField(auto_now_add=True)
     expires = models.DateTimeField(null=True, blank=True)
-    
 
     class Meta(TypedModelMeta):
         verbose_name = "API Key"
@@ -50,17 +50,16 @@ class APIToken(ABIDModel):
         return self.token
 
     def __repr__(self) -> str:
-        return f'<APIToken user={self.user.username} token=************{self.token[-4:]}>'
+        return f'<APIToken user={self.created_by.username} token={self.token_redacted}>'
 
     def __json__(self) -> dict:
         return {
             "TYPE":             "APIToken",    
-            "uuid":             str(self.id),
-            "abid":             str(self.get_abid()),
-            "user_id":          str(self.user.id),
-            "user_username":    self.user.username,
+            "id":               str(self.pk),
+            "abid":             str(self.ABID),
+            "created_by_id":    str(self.created_by_id),
             "token":            self.token,
-            "created":          self.created.isoformat(),
+            "created_at":       self.created_at.isoformat(),
             "expires":          self.expires_as_iso8601,
         }
 
@@ -70,6 +69,10 @@ class APIToken(ABIDModel):
         expiry_date = self.expires or (timezone.now() + timedelta(days=365 * 100))
 
         return expiry_date.isoformat()
+    
+    @property
+    def token_redacted(self):
+        return f'************{self.token[-4:]}'
 
     def is_valid(self, for_date=None):
         for_date = for_date or timezone.now()
@@ -92,14 +95,20 @@ class OutboundWebhook(ABIDModel, WebhookBase):
         settings.SIGNAL_WEBHOOKS_CUSTOM_MODEL = 'api.models.OutboundWebhook'
     """
     abid_prefix = 'whk_'
-    abid_ts_src = 'self.created'
+    abid_ts_src = 'self.created_at'
     abid_uri_src = 'self.endpoint'
     abid_subtype_src = 'self.ref'
     abid_rand_src = 'self.id'
+    abid_drift_allowed = True
 
-    id = models.UUIDField(blank=True, null=True, unique=True, editable=True)
-    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=True)
+    id = models.UUIDField(primary_key=True, default=None, null=False, editable=False, unique=True, verbose_name='ID')
     abid = ABIDField(prefix=abid_prefix)
+
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, default=None, null=False)
+    created_at = AutoDateTimeField(default=None, null=False, db_index=True)
+    modified_at = models.DateTimeField(auto_now=True)
+
+    # More fields here: WebhookBase...
 
     WebhookBase._meta.get_field('name').help_text = (
         'Give your webhook a descriptive name (e.g. Notify ACME Slack channel of any new ArchiveResults).')
@@ -113,3 +122,6 @@ class OutboundWebhook(ABIDModel, WebhookBase):
     class Meta(WebhookBase.Meta):
         verbose_name = 'API Outbound Webhook'
 
+
+    def __str__(self) -> str:
+        return f'[{self.abid}] {self.ref} -> {self.endpoint}'

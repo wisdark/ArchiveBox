@@ -3,12 +3,14 @@ __package__ = 'archivebox.api'
 from typing import Optional
 
 from ninja import Router, Schema
+from django.utils import timezone
+from datetime import timedelta
 
 from api.models import APIToken
-from api.auth import auth_using_token, auth_using_password
+from api.auth import auth_using_token, auth_using_password, get_or_create_api_token
 
 
-router = Router(tags=['Authentication'])
+router = Router(tags=['Authentication'], auth=None)
 
 
 class PasswordAuthSchema(Schema):
@@ -25,10 +27,9 @@ def get_api_token(request, auth_data: PasswordAuthSchema):
         request=request,
     )
 
-    if user:
-        # TODO: support multiple tokens in the future, for now we just have one per user
-        api_token, created = APIToken.objects.get_or_create(user=user)
-
+    if user and user.is_superuser:
+        api_token = get_or_create_api_token(user)
+        assert api_token is not None, "Failed to create API token"
         return api_token.__json__()
     
     return {"success": False, "errors": ["Invalid credentials"]}

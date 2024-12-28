@@ -11,13 +11,14 @@ venv/
 .venv/
 .docker-venv/
 node_modules/
+typings/
 
 # Ignore dev lockfiles (should always be built fresh)
-pdm.lock
 pdm.dev.lock
 requirements-dev.txt
 
 # Packaging artifacts
+requirements.txt
 .pdm-python
 .pdm-build
 archivebox.egg-info
@@ -26,12 +27,16 @@ build/
 dist/
 
 # Data folders
+lib/
+tmp/
 data/
 data*/
 output/
 index.sqlite3
+queue.sqlite3
 *.sqlite*
 data.*
+.archivebox_id
 
 # vim
 *.sw?

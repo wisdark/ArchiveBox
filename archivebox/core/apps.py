@@ -2,27 +2,19 @@ __package__ = 'archivebox.core'
 
 from django.apps import AppConfig
 
+import archivebox
+
 
 class CoreConfig(AppConfig):
     name = 'core'
 
     def ready(self):
-        # register our custom admin as the primary django admin
-        from django.contrib import admin
-        from django.contrib.admin import sites
-        from core.admin import archivebox_admin
-
-        admin.site = archivebox_admin
-        sites.site = archivebox_admin
-
-
-        # register signal handlers
-        from .auth import register_signals
-
-        register_signals()
+        """Register the archivebox.core.admin_site as the main django admin site"""
+        from django.conf import settings
+        archivebox.pm.hook.ready(settings=settings)
+        
+        from core.admin_site import register_admin_site
+        register_admin_site()
+        
 
 
-
-# from django.contrib.admin.apps import AdminConfig
-# class CoreAdminConfig(AdminConfig):
-#     default_site = "core.admin.get_admin_site"
